@@ -157,6 +157,14 @@
 }
 ```
 
+`pwm_mode` は既存 UI と同じく `natural` / `regular` / `third_harmonic` を使う。内部では現行実装に合わせて、
+
+- `natural` → `reference_mode="sinusoidal"` + `sampling_mode="natural"`
+- `regular` → `reference_mode="sinusoidal"` + `sampling_mode="regular"`
+- `third_harmonic` → `reference_mode="third_harmonic"` + `sampling_mode="natural"`
+
+へ写像する。
+
 ### 7.2 レスポンス例
 
 ```json
@@ -177,6 +185,8 @@
 - 元データが必要なエクスポート系機能は後続 Phase 4 で分離する
 - レスポンス生成時は等間隔ダウンサンプリングを基本とし、ピーク保持が必要なら min/max ペア圧縮を検討する
 
+1000 点は、一般的なノート PC 画面幅とブラウザ描画負荷を踏まえ、1 波形を視認可能な密度で表示しつつ JSON サイズを抑えるための初期値である。将来は UI 実測を見て調整する。
+
 ## 8. 主なリスクと対策
 
 | リスク | 内容 | 対策 |
@@ -186,6 +196,8 @@
 | UI 仕様のずれ | Matplotlib と web 表示で見え方が変わる | 表示優先順位を決めて MVP を段階化 |
 | テスト不足 | API 層と UI 層で回帰が漏れる | 既存 pytest 維持 + API テスト追加 |
 | 運用負荷 | サーバ管理が新たに必要 | Docker 化、単一コンテナ配布 |
+
+300 ms のデバウンス値は、スライダーをドラッグ中に過剰な再計算を避けつつ、体感上はほぼ即時に再描画される範囲を狙った初期値である。バックエンド応答時間の実測に応じて 200〜500 ms で再調整する。
 
 ## 9. 推奨技術スタック
 
