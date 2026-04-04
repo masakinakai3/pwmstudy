@@ -3,10 +3,14 @@
 Matplotlib + widgets によるインタラクティブ波形表示を提供する。
 """
 
+import json
+import os
+from datetime import datetime
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
-from matplotlib.widgets import RadioButtons, Slider
+from matplotlib.widgets import Button, RadioButtons, Slider
 
 from simulation.reference_generator import THIRD_HARMONIC_LIMIT, generate_reference
 from simulation.carrier_generator import generate_carrier
@@ -37,6 +41,66 @@ FFT_WINDOW_LABELS = {
     "hann": "Hann",
     "rectangular": "Rectangular",
 }
+
+# 学習シナリオプリセット（IMPROVE-11）
+# スライダー値はUIの表示単位: f_c [kHz], t_d [us], L [mH], その他はSI単位
+SCENARIO_PRESETS = [
+    {
+        "label": "①線形変調限界",
+        "hint": "V_LLスライダーを180V付近まで上げると m_a→1 に近づく。184V超でクランプ表示に切替",
+        "sliders": {
+            "V_dc": 300.0, "V_ll": 141.0, "f": 50.0, "f_c": 5.0,
+            "t_d": 0.0, "V_on": 0.0, "R": 10.0, "L": 10.0,
+        },
+        "pwm_mode": "natural",
+        "fft_target": "voltage",
+        "fft_window": "hann",
+    },
+    {
+        "label": "②キャリア周波数",
+        "hint": "f_cを1kHzから増やすとFFTのキャリア高調波ピークが高周波側へ移動し電流リプルが減少する",
+        "sliders": {
+            "V_dc": 300.0, "V_ll": 141.0, "f": 50.0, "f_c": 1.0,
+            "t_d": 0.0, "V_on": 0.0, "R": 10.0, "L": 10.0,
+        },
+        "pwm_mode": "natural",
+        "fft_target": "voltage",
+        "fft_window": "hann",
+    },
+    {
+        "label": "③L平滑効果",
+        "hint": "L=0.1mHで電流リプル大。Lスライダーを50mHまで増やすと電流が正弦波に近づく",
+        "sliders": {
+            "V_dc": 300.0, "V_ll": 141.0, "f": 50.0, "f_c": 5.0,
+            "t_d": 0.0, "V_on": 0.0, "R": 10.0, "L": 0.1,
+        },
+        "pwm_mode": "natural",
+        "fft_target": "current",
+        "fft_window": "hann",
+    },
+    {
+        "label": "④位相遅れ",
+        "hint": "L=50mH, R=5ΩのときPF1が小さく電流が電圧から大きく遅れる。cos(phi)とPF1を比較",
+        "sliders": {
+            "V_dc": 300.0, "V_ll": 141.0, "f": 50.0, "f_c": 5.0,
+            "t_d": 0.0, "V_on": 0.0, "R": 5.0, "L": 50.0,
+        },
+        "pwm_mode": "natural",
+        "fft_target": "current",
+        "fft_window": "hann",
+    },
+    {
+        "label": "⑤過変調",
+        "hint": "V_LL=220Vはm_a>1の過変調。赤字クランプ表示。3rd Harmonic Injectionに切替えると線形範囲が拡張",
+        "sliders": {
+            "V_dc": 300.0, "V_ll": 220.0, "f": 50.0, "f_c": 5.0,
+            "t_d": 0.0, "V_on": 0.0, "R": 10.0, "L": 10.0,
+        },
+        "pwm_mode": "natural",
+        "fft_target": "voltage",
+        "fft_window": "hann",
+    },
+]
 
 
 def _select_ui_font_family() -> str:
@@ -90,6 +154,9 @@ class InverterVisualizer:
 
         self._lines: dict = {}
         self._sliders: dict = {}
+        self._last_results: dict = {}       # 最新シミュレーション結果（エクスポート/ベースライン用）
+        self._baseline_results: dict | None = None  # ベースラインスナップショット
+        self._applying_scenario: bool = False  # プリセット適用中フラグ（_update 抑制用）
 
         # パラメータ情報パネル（m_a, m_f, Z, φ, cosφ, I比較）
         self._info_text = self._fig.text(
@@ -101,6 +168,8 @@ class InverterVisualizer:
         self._setup_sliders()
         self._setup_fft_controls()
         self._setup_mode_selector()
+        self._setup_scenario_buttons()
+        self._setup_export_buttons()
         self._init_plots()
         self._update(None)
 
@@ -181,6 +250,194 @@ class InverterVisualizer:
         self._fft_window = self._fft_window_label_to_key[label]
         self._update(None)
 
+    def _setup_scenario_buttons(self) -> None:
+        """学習シナリオプリセットボタンを配置する（IMPROVE-11）."""
+        # ヒントテキスト: シナリオボタンの直下に配置
+        self._hint_text = self._fig.text(
+            0.015, 0.049, "",
+            fontsize=8, verticalalignment="top",
+            color="steelblue", style="italic",
+        )
+
+        n = len(SCENARIO_PRESETS)
+        btn_width = 0.145
+        btn_height = 0.020
+        btn_y = 0.063
+        x_start = 0.015
+        total_gap = 0.763 - n * btn_width
+        # SCENARIO_PRESETS は常に2件以上を想定。空の場合は gap=0 でフォールバック
+        gap = total_gap / (n - 1) if n > 1 else 0.0
+
+        self._scenario_buttons: list = []
+        for i, scenario in enumerate(SCENARIO_PRESETS):
+            x = x_start + i * (btn_width + gap)
+            ax_btn = self._fig.add_axes([x, btn_y, btn_width, btn_height])
+            btn = Button(ax_btn, scenario["label"], color="lightcyan", hovercolor="lightblue")
+            btn.label.set_fontsize(8)
+
+            def _make_scenario_cb(idx: int):
+                def _cb(event: object) -> None:
+                    self._apply_scenario(idx)
+                return _cb
+
+            btn.on_clicked(_make_scenario_cb(i))
+            self._scenario_buttons.append(btn)
+
+    def _setup_export_buttons(self) -> None:
+        """エクスポートボタンを配置する（IMPROVE-12）."""
+        btn_height = 0.020
+        btn_y = 0.022
+        export_defs = [
+            ("json_save",      "JSON保存",          0.015, 0.120, "lightyellow",  "lemonchiffon"),
+            ("png_save",       "PNG保存",            0.145, 0.120, "lightyellow",  "lemonchiffon"),
+            ("baseline_set",   "ベースライン設定",    0.275, 0.175, "lightgreen",   "palegreen"),
+            ("baseline_clear", "ベースライン解除",    0.460, 0.175, "mistyrose",    "lightsalmon"),
+        ]
+        self._export_buttons: dict = {}
+        for key, label, x, width, color, hcolor in export_defs:
+            ax_btn = self._fig.add_axes([x, btn_y, width, btn_height])
+            btn = Button(ax_btn, label, color=color, hovercolor=hcolor)
+            btn.label.set_fontsize(8)
+            self._export_buttons[key] = btn
+
+        self._export_buttons["json_save"].on_clicked(self._save_json)
+        self._export_buttons["png_save"].on_clicked(self._save_png)
+        self._export_buttons["baseline_set"].on_clicked(self._set_baseline)
+        self._export_buttons["baseline_clear"].on_clicked(self._clear_baseline)
+
+    def _apply_scenario(self, idx: int) -> None:
+        """シナリオプリセットを適用する（IMPROVE-11）.
+
+        Args:
+            idx: SCENARIO_PRESETS のインデックス
+        """
+        scenario = SCENARIO_PRESETS[idx]
+        # _applying_scenario フラグで _update の多重呼び出しを抑制する
+        self._applying_scenario = True
+        try:
+            for key, val in scenario["sliders"].items():
+                self._sliders[key].set_val(val)
+            # set_active は内部で _update_mode/_update_fft_* を呼ぶが
+            # フラグにより _update は実行されず、モード変数のみ更新される
+            mode_idx = list(PWM_MODE_LABELS).index(scenario["pwm_mode"])
+            self._mode_buttons.set_active(mode_idx)
+            fft_target_idx = list(FFT_TARGET_LABELS).index(scenario["fft_target"])
+            self._fft_target_buttons.set_active(fft_target_idx)
+            fft_window_idx = list(FFT_WINDOW_LABELS).index(scenario["fft_window"])
+            self._fft_window_buttons.set_active(fft_window_idx)
+        finally:
+            self._applying_scenario = False
+        self._hint_text.set_text(f"ヒント: {scenario['hint']}")
+        self._update(None)
+
+    def _save_json(self, event: object) -> None:
+        """現在のパラメータと主要指標を JSON ファイルに保存する（IMPROVE-12）.
+
+        Args:
+            event: ボタンクリックイベント（未使用）
+        """
+        if not self._last_results:
+            return
+        r = self._last_results
+        V_ph = r["V_ll"] / np.sqrt(3)
+        m_a_raw = 2.0 * V_ph / r["V_dc"]
+        m_a = min(m_a_raw, r["m_a_limit"])
+        # タイムスタンプを1回だけ生成してファイル名と JSON 内容で共有する
+        now = datetime.now()
+        data = {
+            "timestamp": now.isoformat(timespec="seconds"),
+            "params": {
+                "V_dc_V": float(self._sliders["V_dc"].val),
+                "V_ll_rms_V": float(self._sliders["V_ll"].val),
+                "f_Hz": float(self._sliders["f"].val),
+                "f_c_kHz": float(self._sliders["f_c"].val),
+                "t_d_us": float(self._sliders["t_d"].val),
+                "V_on_V": float(self._sliders["V_on"].val),
+                "R_ohm": float(self._sliders["R"].val),
+                "L_mH": float(self._sliders["L"].val),
+                "pwm_mode": r["pwm_mode"],
+                "fft_target": r["fft_target"],
+                "fft_window": r["fft_window"],
+            },
+            "metrics": {
+                "m_a": round(float(m_a), 4),
+                "m_f": round(float(r["m_f"]), 1),
+                "V1_pk_V": round(float(r["fft_vuv"]["fundamental_mag"]), 3),
+                "THD_V_pct": round(float(r["fft_vuv"]["thd"]), 2),
+                "V_rms_V": round(float(r["fft_vuv"]["rms_total"]), 3),
+                "I1_theory_pk_A": round(float(r["I_theory"]), 4),
+                "I1_fft_pk_A": round(float(r["I_measured"]), 4),
+                "THD_I_pct": round(float(r["fft_iu"]["thd"]), 2),
+                "I_rms_A": round(float(r["fft_iu"]["rms_total"]), 4),
+                "PF1_fft": round(float(r["pf1_fft"]), 4),
+                "phi_deg": round(float(np.degrees(r["phi"])), 2),
+                "Z_ohm": round(float(r["Z"]), 4),
+            },
+        }
+        fname = f"pwm_export_{now.strftime('%Y%m%d_%H%M%S')}.json"
+        fpath = os.path.join(os.getcwd(), fname)
+        with open(fpath, "w", encoding="utf-8") as f_out:
+            json.dump(data, f_out, ensure_ascii=False, indent=2)
+        self._hint_text.set_text(f"保存完了: {fname}")
+        self._fig.canvas.draw_idle()
+
+    def _save_png(self, event: object) -> None:
+        """現在の波形を PNG ファイルに保存する（IMPROVE-12）.
+
+        Args:
+            event: ボタンクリックイベント（未使用）
+        """
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fname = f"pwm_export_{ts}.png"
+        fpath = os.path.join(os.getcwd(), fname)
+        self._fig.savefig(fpath, dpi=150, bbox_inches="tight")
+        self._hint_text.set_text(f"保存完了: {fname}")
+        self._fig.canvas.draw_idle()
+
+    def _set_baseline(self, event: object) -> None:
+        """現在の波形をベースラインとして設定する（IMPROVE-12）.
+
+        Args:
+            event: ボタンクリックイベント（未使用）
+        """
+        if not self._last_results:
+            return
+        r = self._last_results
+        t_ms = r["t"] * 1000.0
+        # 線間電圧基本波と相電流をベースラインとしてオーバーレイ
+        self._lines["v_uv_baseline"].set_data(t_ms, r["v_uv_fund"])
+        self._lines["i_u_baseline"].set_data(t_ms, r["i_u"])
+        # ベースライン指標を記録
+        V_ph = r["V_ll"] / np.sqrt(3)
+        m_a_raw = 2.0 * V_ph / r["V_dc"]
+        m_a = min(m_a_raw, r["m_a_limit"])
+        self._baseline_results = {
+            "m_a": float(m_a),
+            "V1": float(r["fft_vuv"]["fundamental_mag"]),
+            "THD_V": float(r["fft_vuv"]["thd"]),
+            "I_measured": float(r["I_measured"]),
+            "THD_I": float(r["fft_iu"]["thd"]),
+        }
+        hint = (
+            f"ベースライン設定済み: m_a={m_a:.3f}, "
+            f"V1={r['fft_vuv']['fundamental_mag']:.1f}V, "
+            f"THD_V={r['fft_vuv']['thd']:.1f}%"
+        )
+        self._hint_text.set_text(hint)
+        self._fig.canvas.draw_idle()
+
+    def _clear_baseline(self, event: object) -> None:
+        """ベースラインオーバーレイをクリアする（IMPROVE-12）.
+
+        Args:
+            event: ボタンクリックイベント（未使用）
+        """
+        self._lines["v_uv_baseline"].set_data([], [])
+        self._lines["i_u_baseline"].set_data([], [])
+        self._baseline_results = None
+        self._hint_text.set_text("ベースライン解除")
+        self._fig.canvas.draw_idle()
+
     def _init_plots(self) -> None:
         """サブプロットの初期設定を行う."""
         ax_ref, ax_sw, ax_vlv, ax_phv, ax_cur, ax_fft = self._axes
@@ -219,7 +476,11 @@ class InverterVisualizer:
         self._lines["v_uv_fund"], = ax_vlv.plot(
             [], [], "r--", linewidth=2.0, alpha=0.9, label="基本波"
         )
-        ax_vlv.legend(loc="upper right", fontsize=7, ncol=4)
+        self._lines["v_uv_baseline"], = ax_vlv.plot(
+            [], [], color="darkorange", linestyle=":", linewidth=2.0, alpha=0.7,
+            label="ベースライン",
+        )
+        ax_vlv.legend(loc="upper right", fontsize=7, ncol=5)
 
         # サブプロット 4: 相電圧（負荷中性点基準）+ 基本波オーバーレイ
         ax_phv.set_ylabel("相電圧 [V]")
@@ -240,7 +501,11 @@ class InverterVisualizer:
         self._lines["i_theory"], = ax_cur.plot(
             [], [], "k--", linewidth=2.0, alpha=0.8, label="i_u 理論値"
         )
-        ax_cur.legend(loc="upper right", fontsize=7, ncol=4)
+        self._lines["i_u_baseline"], = ax_cur.plot(
+            [], [], color="purple", linestyle=":", linewidth=2.0, alpha=0.7,
+            label="ベースライン i_u",
+        )
+        ax_cur.legend(loc="upper right", fontsize=7, ncol=5)
 
         # サブプロット 6: FFTスペクトル
         ax_fft.set_ylabel("振幅 [V]")
@@ -583,6 +848,17 @@ class InverterVisualizer:
             f"THD_I = {fft_iu['thd']:.1f}%  /  "
             f"FFT = {results['fft_target_label']} [{results['fft_window_label']}]",
         ]
+        # ベースライン比較情報（設定済みの場合に追記）
+        if self._baseline_results:
+            bl = self._baseline_results
+            delta_V1 = fft_vuv["fundamental_mag"] - bl["V1"]
+            delta_I1 = I_measured - bl["I_measured"]
+            info_lines.append(
+                f"[ベースライン比較] m_a={bl['m_a']:.3f}, "
+                f"V1={bl['V1']:.1f}V (Δ{delta_V1:+.1f}V), "
+                f"THD_V={bl['THD_V']:.1f}%, "
+                f"I1={bl['I_measured']:.2f}A (Δ{delta_I1:+.2f}A)"
+            )
         self._info_text.set_text("\n".join(info_lines))
         if m_a_raw > m_a_limit:
             self._info_text.get_bbox_patch().set_facecolor("lightsalmon")
@@ -714,8 +990,11 @@ class InverterVisualizer:
         Args:
             val: スライダーの値（未使用、コールバックシグネチャ用）
         """
+        if self._applying_scenario:
+            return
         params = self._read_params()
         results = self._run_simulation(params)
+        self._last_results = results
         self._draw_waveforms(results)
 
     def run(self) -> None:

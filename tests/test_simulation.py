@@ -545,3 +545,66 @@ class TestFftAnalyzer:
         fft_current = analyze_spectrum(i_u[:-1], DT_ACTUAL, F, window_mode="hann")
 
         assert fft_current["thd"] < fft_voltage["thd"]
+
+
+class TestScenarioPresets:
+    """学習シナリオプリセットの構成・範囲検証（IMPROVE-11）."""
+
+    def test_all_scenarios_have_required_keys(self) -> None:
+        """全シナリオが必須キーを持つことを確認する."""
+        from ui.visualizer import (
+            FFT_TARGET_LABELS,
+            FFT_WINDOW_LABELS,
+            PWM_MODE_LABELS,
+            SCENARIO_PRESETS,
+        )
+
+        required_slider_keys = {"V_dc", "V_ll", "f", "f_c", "t_d", "V_on", "R", "L"}
+        for scenario in SCENARIO_PRESETS:
+            assert "label" in scenario, "label キーがない"
+            assert "hint" in scenario, "hint キーがない"
+            assert "sliders" in scenario, "sliders キーがない"
+            assert "pwm_mode" in scenario, "pwm_mode キーがない"
+            assert "fft_target" in scenario, "fft_target キーがない"
+            assert "fft_window" in scenario, "fft_window キーがない"
+            assert set(scenario["sliders"].keys()) == required_slider_keys, (
+                f"シナリオ '{scenario['label']}' の sliders キーが不正"
+            )
+            assert scenario["pwm_mode"] in PWM_MODE_LABELS, (
+                f"シナリオ '{scenario['label']}' の pwm_mode が無効"
+            )
+            assert scenario["fft_target"] in FFT_TARGET_LABELS, (
+                f"シナリオ '{scenario['label']}' の fft_target が無効"
+            )
+            assert scenario["fft_window"] in FFT_WINDOW_LABELS, (
+                f"シナリオ '{scenario['label']}' の fft_window が無効"
+            )
+
+    def test_scenario_slider_values_in_valid_range(self) -> None:
+        """全シナリオのスライダー値が UI の有効範囲内に収まることを確認する."""
+        from ui.visualizer import SCENARIO_PRESETS
+
+        # UIスライダーの有効範囲（表示単位: f_c [kHz], t_d [us], L [mH]）
+        ranges = {
+            "V_dc": (100.0, 600.0),
+            "V_ll": (0.0, 450.0),
+            "f":    (1.0, 200.0),
+            "f_c":  (1.0, 20.0),
+            "t_d":  (0.0, 10.0),
+            "V_on": (0.0, 5.0),
+            "R":    (0.1, 100.0),
+            "L":    (0.1, 100.0),
+        }
+        for scenario in SCENARIO_PRESETS:
+            for key, val in scenario["sliders"].items():
+                lo, hi = ranges[key]
+                assert lo <= val <= hi, (
+                    f"シナリオ '{scenario['label']}' の "
+                    f"'{key}' = {val} が範囲 [{lo}, {hi}] 外"
+                )
+
+    def test_scenario_count(self) -> None:
+        """シナリオ数が仕様の5件であることを確認する."""
+        from ui.visualizer import SCENARIO_PRESETS
+
+        assert len(SCENARIO_PRESETS) == 5
