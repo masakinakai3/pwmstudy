@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 PwmMode = Literal["natural", "regular", "third_harmonic", "svpwm"]
-SvpwmMode = Literal["three_phase", "two_phase"]
+SvpwmMode = Literal["three_phase", "dpwm1", "dpwm2", "dpwm3", "two_phase"]
 ApiFftTarget = Literal["v_uv", "i_u"]
 FftWindow = Literal["hann", "rectangular"]
 

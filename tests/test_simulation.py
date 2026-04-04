@@ -190,8 +190,8 @@ class TestReferenceGenerator:
         assert np.max(np.abs(v_w_svpwm)) <= 1.0 + 1e-10
         assert fund_svpwm > fund_sin * 1.03
 
-    def test_svpwm_two_phase_clamps_one_leg_and_preserves_line_voltage(self) -> None:
-        """SVPWM 2相変調では1相クランプが生じ、線間参照差は3相変調と一致する."""
+    def test_svpwm_dpwm1_clamps_one_leg_and_preserves_line_voltage(self) -> None:
+        """SVPWM の DPWM1 では1相クランプが生じ、線間参照差は3相変調と一致する."""
         V_ll_target = 180.0
         v_u_3p, v_v_3p, v_w_3p = generate_reference(
             V_ll_target,
@@ -207,7 +207,7 @@ class TestReferenceGenerator:
             V_DC,
             T,
             mode="svpwm",
-            svpwm_mode="two_phase",
+            svpwm_mode="dpwm1",
         )
 
         phase_stack_2p = np.vstack((v_u_2p, v_v_2p, v_w_2p))
@@ -216,8 +216,8 @@ class TestReferenceGenerator:
         assert np.allclose(clamped_metric, 1.0, atol=1e-10)
         assert np.allclose(v_u_2p - v_v_2p, v_u_3p - v_v_3p, atol=1e-10)
 
-    def test_carrier_based_two_phase_preserves_line_reference(self) -> None:
-        """三角波比較向け正弦参照でも2相変調が選択でき、線間差を保持する."""
+    def test_carrier_based_dpwm1_uses_peak_centered_clamp(self) -> None:
+        """三角波比較向け DPWM1 は山頂中心の60度クランプを作る."""
         V_ll_target = 170.0
         v_u_3p, v_v_3p, _ = generate_reference(
             V_ll_target,
@@ -233,13 +233,96 @@ class TestReferenceGenerator:
             V_DC,
             T,
             mode="sinusoidal",
-            svpwm_mode="two_phase",
+            svpwm_mode="dpwm1",
         )
         phase_stack_2p = np.vstack((v_u_2p, v_v_2p, v_w_2p))
         clamped_metric = np.max(np.abs(phase_stack_2p), axis=0)
+        t_cycle = np.linspace(0.0, 1.0 / F, 3601)
+        angles_deg = t_cycle / t_cycle[-1] * 360.0
+        v_u_cycle, _, _ = generate_reference(
+            V_ll_target,
+            F,
+            V_DC,
+            t_cycle,
+            mode="sinusoidal",
+            svpwm_mode="dpwm1",
+        )
+        idx_30 = np.argmin(np.abs(angles_deg - 30.0))
+        idx_90 = np.argmin(np.abs(angles_deg - 90.0))
+        idx_150 = np.argmin(np.abs(angles_deg - 150.0))
 
         assert np.allclose(v_u_2p - v_v_2p, v_u_3p - v_v_3p, atol=1e-10)
         assert np.mean(np.isclose(clamped_metric, 1.0, atol=1e-10)) > 0.9
+        assert np.isclose(v_u_cycle[idx_90], 1.0, atol=1e-10)
+        assert not np.isclose(v_u_cycle[idx_30], 1.0, atol=1e-10)
+        assert not np.isclose(v_u_cycle[idx_150], 1.0, atol=1e-10)
+
+    def test_carrier_based_dpwm3_keeps_peak_unclamped(self) -> None:
+        """DPWM3 は山頂で張り付かず、両脇で休止する M 字型挙動を持つ."""
+        V_ll_target = 170.0
+        t_cycle = np.linspace(0.0, 1.0 / F, 3601)
+        angles_deg = t_cycle / t_cycle[-1] * 360.0
+        v_u_dpwm3, _, _ = generate_reference(
+            V_ll_target,
+            F,
+            V_DC,
+            t_cycle,
+            mode="sinusoidal",
+            svpwm_mode="dpwm3",
+        )
+        idx_30 = np.argmin(np.abs(angles_deg - 30.0))
+        idx_90 = np.argmin(np.abs(angles_deg - 90.0))
+        idx_150 = np.argmin(np.abs(angles_deg - 150.0))
+
+        assert np.isclose(v_u_dpwm3[idx_30], 1.0, atol=1e-10)
+        assert not np.isclose(v_u_dpwm3[idx_90], 1.0, atol=1e-10)
+        assert np.isclose(v_u_dpwm3[idx_150], 1.0, atol=1e-10)
+
+    def test_dpwm2_produces_distinct_waveform_from_dpwm1(self) -> None:
+        """DPWM2 は DPWM1 と異なるクランプパターンを持つ."""
+        V_ll_target = 170.0
+        v_u_dpwm1, v_v_dpwm1, _ = generate_reference(
+            V_ll_target,
+            F,
+            V_DC,
+            T,
+            mode="sinusoidal",
+            svpwm_mode="dpwm1",
+        )
+        v_u_dpwm2, v_v_dpwm2, _ = generate_reference(
+            V_ll_target,
+            F,
+            V_DC,
+            T,
+            mode="sinusoidal",
+            svpwm_mode="dpwm2",
+        )
+
+        assert not np.allclose(v_u_dpwm1, v_u_dpwm2, atol=1e-10)
+        assert np.allclose(v_u_dpwm2 - v_v_dpwm2, v_u_dpwm1 - v_v_dpwm1, atol=1e-10)
+
+    def test_two_phase_alias_maps_to_dpwm1(self) -> None:
+        """旧 two_phase 指定は後方互換として DPWM1 と同値."""
+        v_u_alias, v_v_alias, v_w_alias = generate_reference(
+            V_LL,
+            F,
+            V_DC,
+            T,
+            mode="sinusoidal",
+            svpwm_mode="two_phase",
+        )
+        v_u_dpwm1, v_v_dpwm1, v_w_dpwm1 = generate_reference(
+            V_LL,
+            F,
+            V_DC,
+            T,
+            mode="sinusoidal",
+            svpwm_mode="dpwm1",
+        )
+
+        assert np.allclose(v_u_alias, v_u_dpwm1, atol=1e-10)
+        assert np.allclose(v_v_alias, v_v_dpwm1, atol=1e-10)
+        assert np.allclose(v_w_alias, v_w_dpwm1, atol=1e-10)
 
 
 class TestCarrierGenerator:
@@ -676,7 +759,7 @@ class TestScenarioPresets:
             assert isinstance(scenario["overmod_view"], bool), (
                 f"シナリオ '{scenario['label']}' の overmod_view が bool でない"
             )
-            assert scenario["svpwm_mode"] in {"three_phase", "two_phase"}, (
+            assert scenario["svpwm_mode"] in {"three_phase", "dpwm1", "dpwm2", "dpwm3"}, (
                 f"シナリオ '{scenario['label']}' の svpwm_mode が無効"
             )
 
@@ -823,7 +906,7 @@ class TestSimulationRunnerContract:
         assert results["metrics"]["m_a"] == results["metrics"]["m_a_raw"]
 
     def test_svpwm_mode_switch_is_reflected_in_meta(self) -> None:
-        """SVPWM 2相/3相選択が実行結果メタ情報に反映される."""
+        """SVPWM の相変調方式選択が実行結果メタ情報に反映される."""
         params_3p = {
             "V_dc": 300.0,
             "V_ll": 180.0,
@@ -840,15 +923,20 @@ class TestSimulationRunnerContract:
             "fft_window": "hann",
         }
         params_2p = dict(params_3p)
-        params_2p["svpwm_mode"] = "two_phase"
+        params_2p["svpwm_mode"] = "dpwm1"
+        params_3 = dict(params_3p)
+        params_3["svpwm_mode"] = "dpwm3"
 
         result_3p = run_simulation(params_3p)
         result_2p = run_simulation(params_2p)
+        result_3 = run_simulation(params_3)
 
         assert result_3p["meta"]["svpwm_mode"] == "three_phase"
-        assert result_2p["meta"]["svpwm_mode"] == "two_phase"
+        assert result_2p["meta"]["svpwm_mode"] == "dpwm1"
+        assert result_3["meta"]["svpwm_mode"] == "dpwm3"
         assert result_3p["meta"]["pwm_mode"] == "svpwm"
         assert result_2p["meta"]["pwm_mode"] == "svpwm"
+        assert result_3["meta"]["pwm_mode"] == "svpwm"
 
     def test_carrier_based_phase_modulation_switch_is_reflected_in_meta(self) -> None:
         """Natural/Regular でも2相/3相変調選択が実行結果へ反映される."""
@@ -869,13 +957,13 @@ class TestSimulationRunnerContract:
         params_3p = dict(base_params)
         params_3p["svpwm_mode"] = "three_phase"
         params_2p = dict(base_params)
-        params_2p["svpwm_mode"] = "two_phase"
+        params_2p["svpwm_mode"] = "dpwm2"
 
         result_3p = run_simulation(params_3p)
         result_2p = run_simulation(params_2p)
 
         assert result_3p["meta"]["svpwm_mode"] == "three_phase"
-        assert result_2p["meta"]["svpwm_mode"] == "two_phase"
+        assert result_2p["meta"]["svpwm_mode"] == "dpwm2"
         assert result_3p["meta"]["pwm_mode"] == "natural"
         assert result_2p["meta"]["pwm_mode"] == "natural"
 
@@ -900,7 +988,7 @@ class TestApplicationServices:
             "current",
             "hann",
             overmod_view=True,
-            svpwm_mode="two_phase",
+            svpwm_mode="dpwm1",
         )
 
         assert params["V_dc"] == 300.0
@@ -910,7 +998,7 @@ class TestApplicationServices:
         assert params["L"] == 0.01
         assert params["pwm_mode"] == "regular"
         assert params["overmod_view"] is True
-        assert params["svpwm_mode"] == "two_phase"
+        assert params["svpwm_mode"] == "dpwm1"
         assert params["fft_target"] == "current"
 
     def test_build_export_payload_uses_structured_results(self) -> None:
@@ -1106,7 +1194,34 @@ class TestWebApi:
         assert data["metrics"]["m_a_limit"] > 1.0
 
     def test_simulate_endpoint_accepts_svpwm_mode(self) -> None:
-        """SVPWM モードを受理し、線形上限が拡張される."""
+        """SVPWM モードが DPWM 指定を受理し、線形上限が拡張される."""
+        client = TestClient(app)
+        payload = {
+            "V_dc": 300.0,
+            "V_ll_rms": 180.0,
+            "f": 50.0,
+            "f_c": 5000.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 0.01,
+            "pwm_mode": "svpwm",
+            "overmod_view": False,
+            "svpwm_mode": "dpwm3",
+            "fft_target": "v_uv",
+            "fft_window": "hann",
+        }
+
+        response = client.post("/simulate", json=payload)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["meta"]["pwm_mode"] == "svpwm"
+        assert data["meta"]["svpwm_mode"] == "dpwm3"
+        assert data["metrics"]["m_a_limit"] > 1.0
+
+    def test_simulate_endpoint_accepts_two_phase_alias(self) -> None:
+        """API は旧 two_phase を後方互換として受理し、内部では DPWM1 として扱う."""
         client = TestClient(app)
         payload = {
             "V_dc": 300.0,
@@ -1128,9 +1243,7 @@ class TestWebApi:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["meta"]["pwm_mode"] == "svpwm"
-        assert data["meta"]["svpwm_mode"] == "two_phase"
-        assert data["metrics"]["m_a_limit"] > 1.0
+        assert data["meta"]["svpwm_mode"] == "dpwm1"
 
     def test_simulate_endpoint_accepts_overmod_checkbox(self) -> None:
         """overmod_view=True を受理し、m_a が 1 を超えるケースを返す."""

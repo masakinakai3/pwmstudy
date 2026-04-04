@@ -37,7 +37,9 @@ PWM_MODE_LABELS = {
 }
 PHASE_MODULATION_LABELS = {
     "three_phase": "3-Phase",
-    "two_phase": "2-Phase",
+    "dpwm1": "DPWM1",
+    "dpwm2": "DPWM2",
+    "dpwm3": "DPWM3",
 }
 FFT_TARGET_LABELS = {
     "voltage": "Line Voltage v_uv",
@@ -82,6 +84,8 @@ class InverterVisualizer:
         self._pwm_mode = self._params.get("pwm_mode", "natural")
         self._overmod_view = bool(self._params.get("overmod_view", False))
         self._svpwm_mode = self._params.get("svpwm_mode", "three_phase")
+        if self._svpwm_mode == "two_phase":
+            self._svpwm_mode = "dpwm1"
         if self._pwm_mode == "natural_overmod":
             self._pwm_mode = "natural"
             self._overmod_view = True
@@ -161,7 +165,7 @@ class InverterVisualizer:
         self._overmod_check = CheckButtons(ax_overmod, ["Overmod View"], [self._overmod_view])
         self._overmod_check.on_clicked(self._update_overmod_view)
 
-        ax_svpwm = self._fig.add_axes([0.81, 0.335, 0.16, 0.065])
+        ax_svpwm = self._fig.add_axes([0.81, 0.30, 0.16, 0.10])
         ax_svpwm.set_title("Phase Modulation", fontsize=9)
         svpwm_labels = list(PHASE_MODULATION_LABELS.values())
         svpwm_active = list(PHASE_MODULATION_LABELS).index(self._svpwm_mode)
@@ -300,6 +304,8 @@ class InverterVisualizer:
             if scenario_overmod != current_overmod:
                 self._overmod_check.set_active(0)
             scenario_svpwm_mode = str(scenario.get("svpwm_mode", "three_phase"))
+            if scenario_svpwm_mode == "two_phase":
+                scenario_svpwm_mode = "dpwm1"
             svpwm_idx = list(PHASE_MODULATION_LABELS).index(scenario_svpwm_mode)
             self._svpwm_buttons.set_active(svpwm_idx)
             fft_target_idx = list(FFT_TARGET_LABELS).index(scenario["fft_target"])

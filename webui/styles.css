@@ -207,6 +207,17 @@ select,
   font-weight: 700;
 }
 
+.mode-hint {
+  margin: -4px 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 .panel-heading.compact h2 {
   font-size: 1.3rem;
 }

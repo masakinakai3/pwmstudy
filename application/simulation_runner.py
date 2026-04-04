@@ -33,7 +33,10 @@ PWM_MODE_LABELS = {
 }
 SVPWM_MODE_LABELS = {
     "three_phase": "3-Phase Modulation",
-    "two_phase": "2-Phase Modulation",
+    "dpwm1": "DPWM1",
+    "dpwm2": "DPWM2",
+    "dpwm3": "DPWM3",
+    "two_phase": "DPWM1",
 }
 FFT_TARGET_LABELS = {
     "voltage": "Line Voltage v_uv",
@@ -168,6 +171,8 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
     if pwm_mode == "natural_overmod":
         pwm_mode = "natural"
         overmod_view = True
+    if svpwm_mode == "two_phase":
+        svpwm_mode = "dpwm1"
     if svpwm_mode not in SVPWM_MODE_LABELS:
         raise ValueError(f"Unsupported svpwm mode: {svpwm_mode}")
 

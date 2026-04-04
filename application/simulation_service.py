@@ -26,7 +26,7 @@ def normalize_ui_display_params(
         fft_target: FFT 表示対象。
         fft_window: FFT 窓関数。
         overmod_view: True のとき線形変調クランプを無効化する。
-        svpwm_mode: SVPWM 方式（three_phase / two_phase）。
+        svpwm_mode: 相変調方式（three_phase / dpwm1 / dpwm2 / dpwm3）。
 
     Returns:
         simulation runner へ渡す SI 単位系の辞書。
@@ -82,6 +82,7 @@ def build_export_payload(
             "R_ohm": float(display_params["R"]),
             "L_mH": float(display_params["L"]),
             "pwm_mode": meta["pwm_mode"],
+            "svpwm_mode": meta["svpwm_mode"],
             "fft_target": meta["fft_target"],
             "fft_window": meta["fft_window"],
         },

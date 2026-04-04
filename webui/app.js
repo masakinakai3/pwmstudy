@@ -23,6 +23,13 @@ let baselineResponse = null;
 let debounceHandle = null;
 let scenarioFetchFailed = false;
 
+const phaseModulationHints = {
+  three_phase: "3相変調: 連続PWM。3相すべてが連続的にスイッチングします。",
+  dpwm1: "DPWM1: 山頂・谷底付近で60度クランプし、ピーク時のスイッチングを休止します。",
+  dpwm2: "DPWM2: DPWM1 と相補的な位置で60度クランプし、休止区間が半周期ずれます。",
+  dpwm3: "DPWM3: 山頂そのものではなく両脇でクランプし、M字型に近い指令波形になります。",
+};
+
 const controlDefinitions = [
   { key: "V_dc", label: "V_dc", min: 100, max: 600, step: 1, unit: "V" },
   { key: "V_ll_rms", label: "V_LL(rms)", min: 0, max: 450, step: 1, unit: "V" },
@@ -75,6 +82,12 @@ function setStatus(badgeText, message, isError = false) {
   detail.textContent = message;
   badge.style.background = isError ? "rgba(193, 79, 44, 0.16)" : "rgba(78, 122, 118, 0.12)";
   badge.style.color = isError ? "#c14f2c" : "#4e7a76";
+}
+
+function updatePhaseModulationHint() {
+  const mode = document.getElementById("svpwmMode").value;
+  const hint = phaseModulationHints[mode] || phaseModulationHints.three_phase;
+  document.getElementById("phaseModulationHint").textContent = hint;
 }
 
 function buildControlRow(definition) {
@@ -147,9 +160,15 @@ function initializeControls() {
   document.getElementById("showURef").checked = defaultDisplayValues.show_u_ref;
   document.getElementById("showVRef").checked = defaultDisplayValues.show_v_ref;
   document.getElementById("showWRef").checked = defaultDisplayValues.show_w_ref;
+  updatePhaseModulationHint();
 
   ["pwmMode", "overmodView", "svpwmMode", "fftTarget", "fftWindow"].forEach((id) => {
-    document.getElementById(id).addEventListener("change", scheduleSimulation);
+    document.getElementById(id).addEventListener("change", () => {
+      if (id === "svpwmMode") {
+        updatePhaseModulationHint();
+      }
+      scheduleSimulation();
+    });
   });
   ["showURef", "showVRef", "showWRef"].forEach((id) => {
     document.getElementById(id).addEventListener("change", () => {
@@ -169,6 +188,7 @@ function initializeControls() {
     document.getElementById("showURef").checked = defaultDisplayValues.show_u_ref;
     document.getElementById("showVRef").checked = defaultDisplayValues.show_v_ref;
     document.getElementById("showWRef").checked = defaultDisplayValues.show_w_ref;
+    updatePhaseModulationHint();
     renderScenarioGuide();
     scheduleSimulation();
   });
@@ -310,6 +330,7 @@ function applyScenario(index) {
   if (!scenario) {
     return;
   }
+  const phaseModulationMode = scenario.svpwm_mode === "two_phase" ? "dpwm1" : (scenario.svpwm_mode || "three_phase");
 
   applyDisplayValues({
     V_dc: scenario.sliders.V_dc,
@@ -323,7 +344,8 @@ function applyScenario(index) {
   });
   document.getElementById("pwmMode").value = scenario.pwm_mode;
   document.getElementById("overmodView").checked = Boolean(scenario.overmod_view);
-  document.getElementById("svpwmMode").value = scenario.svpwm_mode || "three_phase";
+  document.getElementById("svpwmMode").value = phaseModulationMode;
+  updatePhaseModulationHint();
   document.getElementById("fftTarget").value = scenario.fft_target === "current" ? "i_u" : "v_uv";
   document.getElementById("fftWindow").value = scenario.fft_window;
   renderScenarioGuide(index);

@@ -47,12 +47,17 @@
             <input type="checkbox" id="overmodView">
           </label>
           <label>
-            <span>2相/3相変調</span>
+            <span>相変調方式</span>
             <select id="svpwmMode">
               <option value="three_phase">3相変調</option>
-              <option value="two_phase">2相変調</option>
+              <option value="dpwm1">DPWM1</option>
+              <option value="dpwm2">DPWM2</option>
+              <option value="dpwm3">DPWM3</option>
             </select>
           </label>
+          <p id="phaseModulationHint" class="mode-hint">
+            3相変調: 連続PWM。DPWM1/2/3: 1相クランプの位置を変える不連続PWM。
+          </p>
           <label>
             <span>FFT 表示対象</span>
             <select id="fftTarget">

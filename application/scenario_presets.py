@@ -117,7 +117,7 @@ SCENARIO_PRESETS = [
         },
         "pwm_mode": "svpwm",
         "overmod_view": False,
-        "svpwm_mode": "two_phase",
+        "svpwm_mode": "dpwm1",
         "fft_target": "voltage",
         "fft_window": "hann",
     },
