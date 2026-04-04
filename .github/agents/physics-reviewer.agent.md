@@ -23,8 +23,9 @@ You are an electrical engineering expert reviewing a three-phase PWM inverter si
 - m_a 表示値がクランプ前の値と一致しているか
 
 ### 3. 数値計算の安定性
-- RK4 ソルバーの時間刻み dt がキャリア周期に対して十分小さいか
-- ZOH 一貫性: k1〜k4 すべて同一電圧 v(t_n) を使用しているか
+- RL ソルバーの時間刻み dt がキャリア周期に対して十分小さいか
+- 厳密離散時間解: ZOH 入力に対する更新係数が正しく使われているか
+- `expm1` 等で極小抵抗条件の数値安定性が確保されているか
 - `dt_actual = t[1] - t[0]` をソルバーに渡しているか（`np.linspace` との整合）
 - `int(round(...))` で n_points を計算しているか（切り捨て問題の防止）
 - 浮動小数点精度の問題（`np.allclose` の使用）

@@ -3,9 +3,9 @@
 import numpy as np
 import pytest
 
-from simulation.reference_generator import generate_reference
+from simulation.reference_generator import THIRD_HARMONIC_LIMIT, generate_reference
 from simulation.carrier_generator import generate_carrier
-from simulation.pwm_comparator import compare_pwm
+from simulation.pwm_comparator import apply_deadtime, apply_sampling_mode, compare_pwm
 from simulation.inverter_voltage import calc_inverter_voltage
 from simulation.rl_load_solver import solve_rl_load
 from simulation.fft_analyzer import analyze_spectrum
@@ -26,6 +26,61 @@ DT = 1.0 / (F_C * POINTS_PER_CARRIER)
 N_POINTS = int(round(T_SIM / DT)) + 1
 T = np.linspace(0, T_SIM, N_POINTS)
 DT_ACTUAL = T[1] - T[0]  # [s] ソルバーに渡す実際の時間刻み
+T_DEAD = 4.0e-6  # [s]
+V_ON = 1.0       # [V]
+
+
+def _run_nonideal_power_stage(
+    V_ll: float,
+    t_dead: float,
+    V_on: float,
+) -> tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+]:
+    """非理想インバータ + RL負荷の反復整合を行うテスト用ヘルパー."""
+    v_u, v_v, v_w = generate_reference(V_ll, F, V_DC, T)
+    v_carrier = generate_carrier(F_C, T)
+    S_u, S_v, S_w = compare_pwm(v_u, v_v, v_w, v_carrier)
+    leg_u, leg_v, leg_w = apply_deadtime(S_u, S_v, S_w, t_dead, DT_ACTUAL)
+
+    _, _, _, v_uN_ideal, v_vN_ideal, v_wN_ideal = calc_inverter_voltage(S_u, S_v, S_w, V_DC)
+    i_u, i_v, i_w = solve_rl_load(v_uN_ideal, v_vN_ideal, v_wN_ideal, R, L, DT_ACTUAL)
+
+    for _ in range(2):
+        v_uv, v_vw, v_wu, v_uN, v_vN, v_wN = calc_inverter_voltage(
+            leg_u,
+            leg_v,
+            leg_w,
+            V_DC,
+            i_u=i_u,
+            i_v=i_v,
+            i_w=i_w,
+            V_on=V_on,
+            inputs_are_leg_states=True,
+        )
+        i_u, i_v, i_w = solve_rl_load(v_uN, v_vN, v_wN, R, L, DT_ACTUAL)
+
+    v_uv, v_vw, v_wu, v_uN, v_vN, v_wN = calc_inverter_voltage(
+        leg_u,
+        leg_v,
+        leg_w,
+        V_DC,
+        i_u=i_u,
+        i_v=i_v,
+        i_w=i_w,
+        V_on=V_on,
+        inputs_are_leg_states=True,
+    )
+
+    return v_uv, v_vw, v_wu, v_uN, v_vN, v_wN, i_u, i_v, i_w
 
 
 class TestReferenceGenerator:
@@ -54,6 +109,45 @@ class TestReferenceGenerator:
         assert np.allclose(v_u, 0, atol=1e-10)
         assert np.allclose(v_v, 0, atol=1e-10)
         assert np.allclose(v_w, 0, atol=1e-10)
+
+    def test_third_harmonic_injection_adds_common_mode(self) -> None:
+        """三次高調波注入では零相成分が加わるが線間指令は不変."""
+        v_u_sin, v_v_sin, _ = generate_reference(V_LL, F, V_DC, T)
+        v_u_thi, v_v_thi, v_w_thi = generate_reference(
+            V_LL,
+            F,
+            V_DC,
+            T,
+            mode="third_harmonic",
+        )
+
+        common_mode = (v_u_thi + v_v_thi + v_w_thi) / 3.0
+
+        assert np.max(np.abs(common_mode)) > 0.01
+        assert np.allclose(v_u_thi - v_v_thi, v_u_sin - v_v_sin, atol=1e-10)
+
+    def test_third_harmonic_extends_linear_modulation_range(self) -> None:
+        """三次高調波注入では自然サンプリングより高い基本波を維持できる."""
+        m_a_target = 1.10
+        V_ll_target = m_a_target * V_DC * np.sqrt(3.0) / 2.0
+
+        v_u_sin, v_v_sin, v_w_sin = generate_reference(V_ll_target, F, V_DC, T)
+        v_u_thi, v_v_thi, v_w_thi = generate_reference(
+            V_ll_target,
+            F,
+            V_DC,
+            T,
+            mode="third_harmonic",
+        )
+
+        fund_sin = analyze_spectrum(v_u_sin - v_v_sin, DT_ACTUAL, F)["fundamental_mag"]
+        fund_thi = analyze_spectrum(v_u_thi - v_v_thi, DT_ACTUAL, F)["fundamental_mag"]
+
+        assert np.max(np.abs(v_u_thi)) <= 1.0 + 1e-10
+        assert np.max(np.abs(v_v_thi)) <= 1.0 + 1e-10
+        assert np.max(np.abs(v_w_thi)) <= 1.0 + 1e-10
+        assert THIRD_HARMONIC_LIMIT > 1.0
+        assert fund_thi > fund_sin * 1.05
 
 
 class TestCarrierGenerator:
@@ -91,6 +185,56 @@ class TestPwmComparator:
         # キャリアがちょうど0のとき不定なので厳密に全OFF とは限らない
         assert np.mean(S_u) < 0.55
 
+    def test_apply_deadtime_zero_returns_ideal_leg_state(self) -> None:
+        """t_dead=0 では理想レグ状態に一致する."""
+        S_x = np.array([0, 0, 1, 1, 0], dtype=np.int32)
+        leg_u, _, _ = apply_deadtime(S_x, S_x, S_x, 0.0, 1.0e-6)
+        expected = np.array([-1, -1, 1, 1, -1], dtype=np.int8)
+        assert np.array_equal(leg_u, expected)
+
+    def test_apply_deadtime_inserts_both_off_interval(self) -> None:
+        """デッドタイム中はレグ状態が 0 になる."""
+        S_x = np.array([0, 0, 1, 1, 1], dtype=np.int32)
+        leg_u, _, _ = apply_deadtime(S_x, S_x, S_x, 2.0e-6, 1.0e-6)
+        expected = np.array([-1, -1, 0, 0, 1], dtype=np.int8)
+        assert np.array_equal(leg_u, expected)
+
+    def test_regular_sampling_holds_reference_within_carrier_period(self) -> None:
+        """規則サンプリングでは各キャリア周期で変調信号が保持される."""
+        v_u, v_v, v_w = generate_reference(V_LL, F, V_DC, T)
+        v_u_reg, v_v_reg, v_w_reg = apply_sampling_mode(v_u, v_v, v_w, T, F_C, "regular")
+
+        carrier_index = np.floor((T - T[0]) * F_C - 1.0e-12).astype(np.int64)
+        carrier_index = np.maximum(carrier_index, 0)
+
+        for signal in (v_u_reg, v_v_reg, v_w_reg):
+            for index in np.unique(carrier_index):
+                segment = signal[carrier_index == index]
+                assert np.allclose(segment, segment[0], atol=1e-12)
+
+    def test_regular_sampling_changes_switching_pattern(self) -> None:
+        """規則サンプリングでは自然サンプリングと異なるスイッチングになる."""
+        f_c_test = 1000.0
+        t_test = np.linspace(0.0, 0.04, 4001)
+        dt_test = t_test[1] - t_test[0]
+
+        v_u, v_v, v_w = generate_reference(V_LL, F, V_DC, t_test)
+        v_carrier = generate_carrier(f_c_test, t_test)
+
+        S_u_natural, _, _ = compare_pwm(v_u, v_v, v_w, v_carrier)
+        v_u_reg, v_v_reg, v_w_reg = apply_sampling_mode(
+            v_u,
+            v_v,
+            v_w,
+            t_test,
+            f_c_test,
+            sampling_mode="regular",
+        )
+        S_u_regular, _, _ = compare_pwm(v_u_reg, v_v_reg, v_w_reg, v_carrier)
+
+        assert dt_test > 0.0
+        assert np.any(S_u_natural != S_u_regular)
+
 
 class TestInverterVoltage:
     """インバータ電圧演算モジュールのテスト."""
@@ -120,21 +264,64 @@ class TestInverterVoltage:
         for v in (v_uv, v_vw, v_wu):
             assert np.all(np.isin(v, [-V_DC, 0, V_DC]))
 
+    def test_voltage_drop_reduces_line_voltage_amplitude(self) -> None:
+        """固定電圧降下 V_on により線間電圧振幅が 2*V_on 減少する."""
+        S_u = np.ones(4, dtype=np.int32)
+        S_v = np.zeros(4, dtype=np.int32)
+        S_w = np.zeros(4, dtype=np.int32)
+
+        v_uv, _, _, _, _, _ = calc_inverter_voltage(S_u, S_v, S_w, V_DC, V_on=V_ON)
+
+        assert np.allclose(v_uv, V_DC - 2.0 * V_ON, atol=1e-10)
+
+    def test_deadtime_freewheel_path_depends_on_current_direction(self) -> None:
+        """デッドタイム中の極電圧が電流方向で切り替わる."""
+        leg_u = np.array([0], dtype=np.int8)
+        leg_v = np.array([-1], dtype=np.int8)
+        leg_w = np.array([-1], dtype=np.int8)
+        zeros = np.zeros(1)
+
+        v_uv_pos, _, _, _, _, _ = calc_inverter_voltage(
+            leg_u,
+            leg_v,
+            leg_w,
+            V_DC,
+            i_u=np.array([5.0]),
+            i_v=zeros,
+            i_w=zeros,
+            V_on=V_ON,
+            inputs_are_leg_states=True,
+        )
+        v_uv_neg, _, _, _, _, _ = calc_inverter_voltage(
+            leg_u,
+            leg_v,
+            leg_w,
+            V_DC,
+            i_u=np.array([-5.0]),
+            i_v=zeros,
+            i_w=zeros,
+            V_on=V_ON,
+            inputs_are_leg_states=True,
+        )
+
+        assert np.isclose(v_uv_pos[0], 0.0, atol=1e-10)
+        assert np.isclose(v_uv_neg[0], V_DC - 2.0 * V_ON, atol=1e-10)
+
 
 class TestRlLoadSolver:
     """RL負荷電流演算モジュールのテスト."""
 
     def test_steady_state_current_amplitude(self) -> None:
-        """定常状態の電流振幅が理論値と5%以内で一致."""
+        """定常状態の電流基本波振幅が理論値と5%以内で一致."""
         v_u, v_v, v_w = generate_reference(V_LL, F, V_DC, T)
         v_carrier = generate_carrier(F_C, T)
         S_u, S_v, S_w = compare_pwm(v_u, v_v, v_w, v_carrier)
         _, _, _, v_uN, v_vN, v_wN = calc_inverter_voltage(S_u, S_v, S_w, V_DC)
         i_u, i_v, i_w = solve_rl_load(v_uN, v_vN, v_wN, R, L, DT_ACTUAL)
 
-        # 最後の1周期分のデータで振幅を測定
-        points_per_cycle = int(round(1.0 / (F * DT_ACTUAL)))
-        i_u_last = i_u[-points_per_cycle:]
+        # 最後の2周期分のデータから基本波振幅を測定
+        points_two_cycles = int(round(2.0 / (F * DT_ACTUAL))) + 1
+        i_u_last = i_u[-points_two_cycles:]
 
         # 理論値
         V_ph = V_LL / np.sqrt(3)                     # [V]
@@ -143,7 +330,7 @@ class TestRlLoadSolver:
         Z = np.sqrt(R**2 + (2.0 * np.pi * F * L)**2)  # [Ω] インピーダンス
         I_theory = V_ph_fund / Z                       # [A] 理論電流振幅
 
-        I_measured = (np.max(i_u_last) - np.min(i_u_last)) / 2.0  # [A]
+        I_measured = analyze_spectrum(i_u_last, DT_ACTUAL, F)["fundamental_mag"]  # [A]
 
         assert abs(I_measured - I_theory) / I_theory < 0.05
 
@@ -160,6 +347,51 @@ class TestRlLoadSolver:
         total = i_u[-points_per_cycle:] + i_v[-points_per_cycle:] + i_w[-points_per_cycle:]
         assert np.allclose(total, 0, atol=1e-3)
 
+    def test_step_response_matches_analytic_solution(self) -> None:
+        """定電圧入力に対して解析解と一致する."""
+        t_test = np.linspace(0.0, 0.02, 2001)
+        dt_test = t_test[1] - t_test[0]
+        R_test = 5.0    # [Ω]
+        L_test = 0.02   # [H]
+        v_step = 120.0  # [V]
+
+        v_uN = np.full_like(t_test, v_step)
+        zeros = np.zeros_like(t_test)
+
+        i_u, _, _ = solve_rl_load(v_uN, zeros, zeros, R_test, L_test, dt_test)
+        expected = (v_step / R_test) * (1.0 - np.exp(-R_test * t_test / L_test))
+
+        assert np.allclose(i_u, expected, atol=1e-10)
+
+    def test_zero_resistance_matches_linear_ramp(self) -> None:
+        """R=0 の極限で電流が線形ランプになる."""
+        t_test = np.linspace(0.0, 0.01, 1001)
+        dt_test = t_test[1] - t_test[0]
+        L_test = 0.01   # [H]
+        v_step = 30.0   # [V]
+
+        v_uN = np.full_like(t_test, v_step)
+        zeros = np.zeros_like(t_test)
+
+        i_u, _, _ = solve_rl_load(v_uN, zeros, zeros, 0.0, L_test, dt_test)
+        expected = (v_step / L_test) * t_test
+
+        assert np.allclose(i_u, expected, atol=1e-10)
+
+
+class TestNonidealInverterModel:
+    """非理想インバータモデルのテスト."""
+
+    def test_nonideal_model_reduces_fundamental_voltage(self) -> None:
+        """デッドタイムと電圧降下により基本波振幅が低下する."""
+        v_uv_ideal, _, _, _, _, _, _, _, _ = _run_nonideal_power_stage(40.0, 0.0, 0.0)
+        v_uv_nonideal, _, _, _, _, _, _, _, _ = _run_nonideal_power_stage(40.0, T_DEAD, V_ON)
+
+        fft_ideal = analyze_spectrum(v_uv_ideal, DT_ACTUAL, F)
+        fft_nonideal = analyze_spectrum(v_uv_nonideal, DT_ACTUAL, F)
+
+        assert fft_nonideal["fundamental_mag"] < fft_ideal["fundamental_mag"]
+
 
 class TestFftAnalyzer:
     """FFT解析モジュールのテスト."""
@@ -167,7 +399,8 @@ class TestFftAnalyzer:
     def test_pure_sine_thd_near_zero(self) -> None:
         """純正弦波のTHDが概ね0%."""
         dt_test = 1e-5  # [s]
-        t_test = np.arange(0, 0.1, dt_test)
+        n_samples = int(0.1 / dt_test)
+        t_test = np.linspace(0, 0.1, n_samples, endpoint=False)
         signal = 100.0 * np.sin(2.0 * np.pi * 50.0 * t_test)  # [V]
         result = analyze_spectrum(signal, dt_test, 50.0)
         assert result["thd"] < 1.0  # THD < 1%
@@ -221,3 +454,94 @@ class TestFftAnalyzer:
         )
         # 元信号との一致（基本波成分のみなので高精度一致）
         assert np.allclose(signal, reconstructed, atol=1.0)
+
+    def test_hann_window_recovers_peak_with_approximate_frequency_hint(self) -> None:
+        """Hann 窓と補間で、近傍の基本波ピークを正しく捉えられる."""
+        dt_test = 1e-3  # [s]
+        duration = 2.0  # [s] 周波数分解能 0.5 Hz
+        n_samples = int(duration / dt_test)
+        t_test = np.linspace(0, duration, n_samples, endpoint=False)
+        amplitude = 80.0  # [V]
+        signal = amplitude * np.cos(2.0 * np.pi * 50.0 * t_test + 0.35)
+
+        rectangular = analyze_spectrum(
+            signal,
+            dt_test,
+            47.0,
+            window_mode="rectangular",
+            enable_peak_interpolation=False,
+        )
+        hann = analyze_spectrum(signal, dt_test, 47.0, window_mode="hann")
+
+        rect_error = abs(rectangular["fundamental_mag"] - amplitude) / amplitude
+        hann_error = abs(hann["fundamental_mag"] - amplitude) / amplitude
+
+        assert hann_error < rect_error
+        assert hann_error < 0.02
+
+    def test_peak_interpolation_recovers_fundamental_frequency(self) -> None:
+        """ピーク補間で非整数ビンの基本波周波数を推定できる."""
+        dt_test = 1e-4  # [s]
+        duration = 0.137  # [s]
+        n_samples = int(duration / dt_test)
+        t_test = np.linspace(0, duration, n_samples, endpoint=False)
+        frequency = 53.3  # [Hz]
+        phase = -0.4  # [rad]
+        signal = 90.0 * np.cos(2.0 * np.pi * frequency * t_test + phase)
+
+        result = analyze_spectrum(signal, dt_test, frequency, window_mode="hann")
+        phase_error = np.arctan2(
+            np.sin(result["fundamental_phase"] - phase),
+            np.cos(result["fundamental_phase"] - phase),
+        )
+
+        assert abs(result["fundamental_freq"] - frequency) < 0.2
+        assert abs(phase_error) < 0.1
+
+    def test_known_harmonic_composite_thd_matches_theory(self) -> None:
+        """既知高調波合成波の THD が理論値と一致する."""
+        dt_test = 1e-5  # [s]
+        n_samples = int(0.2 / dt_test)
+        t_test = np.linspace(0, 0.2, n_samples, endpoint=False)
+        fundamental = 100.0  # [V]
+        harmonic_5 = 30.0  # [V]
+        harmonic_7 = 10.0  # [V]
+        signal = (
+            fundamental * np.cos(2.0 * np.pi * 50.0 * t_test)
+            + harmonic_5 * np.cos(2.0 * np.pi * 250.0 * t_test + 0.2)
+            + harmonic_7 * np.cos(2.0 * np.pi * 350.0 * t_test - 0.1)
+        )
+
+        result = analyze_spectrum(signal, dt_test, 50.0, window_mode="hann")
+        expected_thd = np.sqrt(harmonic_5 ** 2 + harmonic_7 ** 2) / fundamental * 100.0
+
+        assert abs(result["thd"] - expected_thd) < 1.0
+
+    def test_rms_metrics_are_consistent(self) -> None:
+        """RMS 指標が振幅と DC 成分から一貫して計算される."""
+        dt_test = 1e-5  # [s]
+        n_samples = int(0.1 / dt_test)
+        t_test = np.linspace(0, 0.1, n_samples, endpoint=False)
+        amplitude = 70.0  # [V]
+        dc_component = 20.0  # [V]
+        signal = dc_component + amplitude * np.cos(2.0 * np.pi * 50.0 * t_test)
+
+        result = analyze_spectrum(signal, dt_test, 50.0, window_mode="hann")
+        expected_rms_total = np.sqrt((amplitude / np.sqrt(2.0)) ** 2 + dc_component ** 2)
+
+        assert abs(result["fundamental_rms"] - amplitude / np.sqrt(2.0)) < 0.2
+        assert abs(result["rms_total"] - expected_rms_total) < 0.2
+        assert abs(result["dc_component"] - dc_component) < 0.2
+
+    def test_current_spectrum_has_lower_thd_than_voltage(self) -> None:
+        """RL 負荷では相電流の THD が線間電圧より低い."""
+        v_u, v_v, v_w = generate_reference(V_LL, F, V_DC, T)
+        v_carrier = generate_carrier(F_C, T)
+        S_u, S_v, S_w = compare_pwm(v_u, v_v, v_w, v_carrier)
+        v_uv, _, _, v_uN, v_vN, v_wN = calc_inverter_voltage(S_u, S_v, S_w, V_DC)
+        i_u, _, _ = solve_rl_load(v_uN, v_vN, v_wN, R, L, DT_ACTUAL)
+
+        fft_voltage = analyze_spectrum(v_uv[:-1], DT_ACTUAL, F, window_mode="hann")
+        fft_current = analyze_spectrum(i_u[:-1], DT_ACTUAL, F, window_mode="hann")
+
+        assert fft_current["thd"] < fft_voltage["thd"]

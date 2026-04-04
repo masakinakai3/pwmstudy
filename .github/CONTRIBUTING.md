@@ -2,12 +2,13 @@
 
 三相PWMインバータ学習ソフトウェアへの貢献ありがとうございます。
 
-> **現在の状態**: STEP 1〜8 の初期実装＋改善 IMPROVE-1〜6 適用済み。テスト16件 ALL PASS。
+> **現在の状態**: STEP 1〜8 の初期実装＋改善 IMPROVE-1〜10 適用済み。テスト34件 ALL PASS。
 > 今後は機能拡張・改善フェーズです。
 
 ## 開発環境のセットアップ
 
 ### 前提条件
+
 - Python 3.10 以上
 - Git
 
@@ -28,12 +29,12 @@ pip install -r requirements.txt
 
 ```bash
 python main.py                    # GUI 起動
-python -m pytest tests/ -v        # テスト実行（16件）
+python -m pytest tests/ -v        # テスト実行（34件）
 ```
 
 ## プロジェクト構成
 
-```
+```text
 3lvlpwm/
 ├── main.py                      # エントリポイント（デフォルトパラメータ一元管理、V_llはRMS値）
 ├── simulation/
@@ -42,13 +43,13 @@ python -m pytest tests/ -v        # テスト実行（16件）
 │   ├── carrier_generator.py     # 三角波キャリア生成
 │   ├── pwm_comparator.py        # PWMスイッチングパターン
 │   ├── inverter_voltage.py      # 線間・相電圧演算
-│   ├── rl_load_solver.py        # RL負荷電流演算（RK4法、ZOH一貫性）
+│   ├── rl_load_solver.py        # RL負荷電流演算（厳密離散時間解）
 │   └── fft_analyzer.py          # FFTスペクトル解析・THD計算
 ├── ui/
 │   ├── __init__.py
-│   └── visualizer.py            # 5段波形表示 + 6スライダー + m_a表示
+│   └── visualizer.py            # 6段波形表示 + 8スライダー + PWM方式選択 + FFT切替 + 非理想モデル + 理論比較表示
 ├── tests/
-│   └── test_simulation.py       # 物理妥当性テスト（16件、6クラス）
+│   └── test_simulation.py       # 物理妥当性テスト（34件、7クラス）
 ├── docs/
 │   └── user_guide.md            # 利用手順書
 ├── requirements.txt
@@ -59,7 +60,7 @@ python -m pytest tests/ -v        # テスト実行（16件）
 
 ## ブランチ戦略
 
-```
+```text
 main          ← 安定版（常に動作する状態を維持）
 ├── feature/* ← 新機能（例: feature/fft-analysis）
 ├── fix/*     ← バグ修正（例: fix/carrier-phase-offset）
@@ -71,7 +72,7 @@ main          ← 安定版（常に動作する状態を維持）
 
 ## コミットメッセージ規約
 
-```
+```text
 <type>: <概要>
 
 <本文（任意）>
@@ -80,7 +81,7 @@ main          ← 安定版（常に動作する状態を維持）
 ### type 一覧
 
 | type | 用途 |
-|---|---|
+| --- | --- |
 | `feat` | 新機能追加 |
 | `fix` | バグ修正 |
 | `refactor` | コードの内部改善（動作変更なし） |
@@ -90,11 +91,11 @@ main          ← 安定版（常に動作する状態を維持）
 
 ### 例
 
-```
+```text
 feat: RL負荷電流演算モジュールを実装
 
-RK4法による数値積分を採用。
-各相独立に微分方程式を解く。
+区分定数入力に対する厳密離散時間解を採用。
+各相を同じ更新係数で時間発展させる。
 ```
 
 ## 実装時の注意事項
@@ -108,7 +109,7 @@ RK4法による数値積分を採用。
 ### 物理量の命名規則
 
 | 物理量 | プレフィックス | 例 |
-|---|---|---|
+| --- | --- | --- |
 | 電圧 | `v_` | `v_uv`, `v_carrier` |
 | 電流 | `i_` | `i_u`, `i_v`, `i_w` |
 | スイッチング | `S_` | `S_u`, `S_v`, `S_w` |
@@ -132,7 +133,7 @@ RK4法による数値積分を採用。
 ### テストの実行
 
 ```bash
-python -m pytest tests/ -v        # 全テスト（16件）
+python -m pytest tests/ -v        # 全テスト（34件）
 python -m pytest tests/ -k "RlLoad"  # 特定クラスのみ
 ```
 
@@ -141,20 +142,21 @@ python -m pytest tests/ -k "RlLoad"  # 特定クラスのみ
 テストは `tests/test_simulation.py` に集約（クラス単位で構成）:
 
 | テストクラス | テスト数 | 検証内容 |
-|---|---|---|
-| `TestReferenceGenerator` | 4 | 三相和=0、値域[-1,1]、過変調クランプ、零電圧 |
+| --- | --- | --- |
+| `TestReferenceGenerator` | 6 | 三相和=0、値域[-1,1]、過変調クランプ、零電圧、三次高調波注入 |
 | `TestCarrierGenerator` | 2 | 値域[-1,1]、±1到達 |
-| `TestPwmComparator` | 2 | スイッチング値{0,1}、零変調時OFF |
-| `TestInverterVoltage` | 3 | 線間電圧和=0、相電圧和=0、3レベル |
-| `TestRlLoadSolver` | 2 | 定常電流振幅理論値一致、三相電流和≈0 |
-| `TestFftAnalyzer` | 3 | 純正弦波THD≈0、基本波振幅一致、PWMスペクトル検証 |
+| `TestPwmComparator` | 6 | スイッチング値{0,1}、零変調時OFF、デッドタイム挿入、規則サンプリング |
+| `TestInverterVoltage` | 5 | 線間電圧和=0、相電圧和=0、3レベル、固定電圧降下、電流方向依存導通 |
+| `TestRlLoadSolver` | 4 | 定常電流振幅理論値一致、三相電流和≈0、解析解一致、R=0極限 |
+| `TestNonidealInverterModel` | 1 | 非理想モデルでの基本波低下 |
+| `TestFftAnalyzer` | 10 | 純正弦波THD≈0、基本波振幅一致、PWMスペクトル検証、位相/再構成、RMS/THD精度 |
 
 ### テスト作成の指針
 
 各モジュールで以下を検証すること:
 
 | 検証項目 | 方法 |
-|---|---|
+| --- | --- |
 | 三相の和 = 0 | `np.allclose(v_u + v_v + v_w, 0)` |
 | 出力値の範囲 | 変調信号: [-1, 1]、スイッチング: {0, 1} |
 | 理論値との一致 | 定常状態で誤差 5%以内 |
@@ -172,5 +174,5 @@ python -m pytest tests/ -k "RlLoad"  # 特定クラスのみ
 
 - [architecture.md](../architecture.md) — アーキテクチャ設計
 - [implementation_plan.md](../implementation_plan.md) — 実装計画書
-- [improvement_plan.md](../improvement_plan.md) — 改善計画書（IMPROVE-1〜6）
+- [improvement_plan.md](../improvement_plan.md) — 改善計画書（未実装改善のロードマップ）
 - [CODING_STANDARDS.md](CODING_STANDARDS.md) — コーディング規約詳細

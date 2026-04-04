@@ -9,15 +9,15 @@ You are a Python engineer implementing a three-phase PWM inverter simulation.
 STEP 1〜8 の初期実装は完了済み。新機能の追加・既存モジュールの改善・バグ修正を行う。
 
 ## Current Implementation Status
-- `simulation/reference_generator.py` — `generate_reference(V_ll, f, V_dc, t)` ✅
+- `simulation/reference_generator.py` — `generate_reference(V_ll, f, V_dc, t, mode="sinusoidal")` ✅
 - `simulation/carrier_generator.py` — `generate_carrier(f_c, t)` ✅
-- `simulation/pwm_comparator.py` — `compare_pwm(v_u, v_v, v_w, v_carrier)` ✅
-- `simulation/inverter_voltage.py` — `calc_inverter_voltage(S_u, S_v, S_w, V_dc)` ✅
+- `simulation/pwm_comparator.py` — `apply_sampling_mode(...)`, `compare_pwm(...)`, `apply_deadtime(...)` ✅
+- `simulation/inverter_voltage.py` — `calc_inverter_voltage(..., V_on, inputs_are_leg_states=False)` ✅
 - `simulation/rl_load_solver.py` — `solve_rl_load(v_uN, v_vN, v_wN, R, L, dt)` ✅
-- `simulation/fft_analyzer.py` — `analyze_spectrum(signal, dt, f_fundamental)` ✅
-- `ui/visualizer.py` — `InverterVisualizer` クラス（5段サブプロット + m_a表示） ✅
+- `simulation/fft_analyzer.py` — `analyze_spectrum(signal, dt, f_fundamental, window_mode="rectangular", enable_peak_interpolation=True)` ✅
+- `ui/visualizer.py` — `InverterVisualizer` クラス（6段サブプロット + 8スライダー + PWM方式選択 + FFT切替 + 非理想モデル表示） ✅
 - `main.py` — エントリポイント（V_llはRMS値） ✅
-- `tests/test_simulation.py` — 16件 ALL PASS ✅
+- `tests/test_simulation.py` — 34件 ALL PASS ✅
 
 ## Applied Improvements
 - IMPROVE-1: dt不整合修正（`int(round())` + `dt_actual`）
@@ -26,12 +26,16 @@ STEP 1〜8 の初期実装は完了済み。新機能の追加・既存モジュ
 - IMPROVE-4: V_LL RMS入力（内部で×√2変換）
 - IMPROVE-5: FFT解析パネル + THD表示
 - IMPROVE-6: RK4 ZOH一貫性修正
+- IMPROVE-7: PWM 方式比較モード
+- IMPROVE-8: 非理想インバータモデル
+- IMPROVE-9: RL ソルバの厳密離散化
+- IMPROVE-10: FFT 精度向上と電流スペクトル拡張
 
 ## Workflow (Feature Extension)
 1. `improvement_plan.md` の将来拡張候補を確認する
 2. 既存コードの影響範囲を調査する（`simulation/` と `ui/` の分離を維持）
 3. コーディング規約（`.github/copilot-instructions.md`）に従い実装する
-4. テストを追加し、既存テスト16件が引き続き PASS することを確認する
+4. テストを追加し、既存テスト34件が引き続き PASS することを確認する
 5. 変更内容と検証結果を報告する
 
 ## Workflow (Bug Fix)
@@ -44,12 +48,12 @@ STEP 1〜8 の初期実装は完了済み。新機能の追加・既存モジュ
 - グローバル変数を使用しない
 - パラメータのハードコードは禁止（デフォルト値は `main.py` で一元管理）
 - NumPy ベクトル演算を使用し、Python の for ループで配列を処理しない
-  - 例外: `rl_load_solver.py` の RK4 時間ステップ積分
+  - 例外: `rl_load_solver.py` の厳密離散時間更新
 - 型ヒントと Google スタイル docstring を必ず付与する
 
 ## Output Format
 実装完了時に以下を報告:
 - 変更した関数・追加したファイル一覧
-- 既存テスト16件の PASS/FAIL 状況
+- 既存テスト34件の PASS/FAIL 状況
 - 追加テストの検証結果
 - 物理的妥当性の確認（該当する場合）

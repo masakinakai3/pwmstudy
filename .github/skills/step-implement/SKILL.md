@@ -6,7 +6,7 @@ argument-hint: "STEP number (e.g., 'STEP 2' or '2') or feature name (e.g., 'FFT 
 
 # STEP 実装 / 機能拡張スキル
 
-> **現在の状態**: STEP 1〜8 の初期実装＋改善 IMPROVE-1〜6 適用済み。テスト16件 ALL PASS。
+> **現在の状態**: STEP 1〜8 の初期実装＋改善 IMPROVE-1〜10 適用済み。テスト34件 ALL PASS。
 
 ## When to Use
 - implementation_plan.md の特定 STEP を再実装・修正するとき
@@ -30,7 +30,7 @@ argument-hint: "STEP number (e.g., 'STEP 2' or '2') or feature name (e.g., 'FFT 
 
 ### Step 3: 検証
 変更後に全テストを実行:
-- 既存テスト16件のリグレッション確認
+- 既存テスト34件のリグレッション確認
 - 必要に応じて新規テストを追加
 
 ## Procedure (New Feature Extension)
@@ -45,11 +45,15 @@ argument-hint: "STEP number (e.g., 'STEP 2' or '2') or feature name (e.g., 'FFT 
 4. ~~m_a表示 + クランプ通知~~ (IMPROVE-2)
 5. ~~V_LL RMS入力~~ (IMPROVE-4)
 6. ~~RK4 ZOH一貫性~~ (IMPROVE-6)
+7. ~~非理想インバータモデル~~ (IMPROVE-8)
+8. ~~RL ソルバの厳密離散化~~ (IMPROVE-9)
+9. ~~PWM 方式比較モード~~ (IMPROVE-7)
+10. ~~FFT 精度向上と電流スペクトル拡張~~ (IMPROVE-10)
 
 未実装:
 1. 過変調モード（m_a > 1）
-2. デッドタイム模擬
-3. 規則サンプリングPWMモード
+2. 学習シナリオガイド機能
+3. 条件比較・エクスポート機能
 
 ### Step 2: 影響範囲の調査
 - `simulation/` に新モジュールが必要か、既存の拡張か
@@ -67,10 +71,10 @@ argument-hint: "STEP number (e.g., 'STEP 2' or '2') or feature name (e.g., 'FFT 
 ### Step 5: 報告
 実装結果を以下の形式で報告:
 - 変更・追加した関数一覧
-- 既存テスト16件 PASS/FAIL
+- 既存テスト34件 PASS/FAIL
 - 新規テストの検証結果
 
 ## References
-- [implementation_plan.md](../../implementation_plan.md) — STEP 詳細仕様
-- [improvement_plan.md](../../improvement_plan.md) — 改善計画書（IMPROVE-1〜6）
-- [architecture.md](../../architecture.md) — モジュール間データフロー
+- [implementation_plan.md](../../../implementation_plan.md) — STEP 詳細仕様
+- [improvement_plan.md](../../../improvement_plan.md) — 改善計画書
+- [architecture.md](../../../architecture.md) — モジュール間データフロー

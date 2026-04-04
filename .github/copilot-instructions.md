@@ -3,21 +3,21 @@
 ## プロジェクト概要
 
 三相PWMインバータの原理を学習するためのシミュレーションソフトウェア。
-Python + NumPy + Matplotlib（widgets）構成。**STEP 1〜8 の初期実装＋改善 IMPROVE-1〜6 適用済み。**
+Python + NumPy + Matplotlib（widgets）構成。**STEP 1〜8 の初期実装＋改善 IMPROVE-1〜10 適用済み。**
 
 ## アーキテクチャ
 
 - `simulation/` — シミュレーションエンジン（6モジュール、全て純粋関数）
-  - `reference_generator.py` — `generate_reference(V_ll, f, V_dc, t)`
+  - `reference_generator.py` — `generate_reference(V_ll, f, V_dc, t, mode="sinusoidal")`
   - `carrier_generator.py` — `generate_carrier(f_c, t)`
-  - `pwm_comparator.py` — `compare_pwm(v_u, v_v, v_w, v_carrier)`
-  - `inverter_voltage.py` — `calc_inverter_voltage(S_u, S_v, S_w, V_dc)`
+  - `pwm_comparator.py` — `apply_sampling_mode(...)`, `compare_pwm(...)`, `apply_deadtime(...)`
+  - `inverter_voltage.py` — `calc_inverter_voltage(..., V_on, inputs_are_leg_states=False)`
   - `rl_load_solver.py` — `solve_rl_load(v_uN, v_vN, v_wN, R, L, dt)`
-  - `fft_analyzer.py` — `analyze_spectrum(signal, dt, f_fundamental)`
+  - `fft_analyzer.py` — `analyze_spectrum(signal, dt, f_fundamental, window_mode="rectangular", enable_peak_interpolation=True)`
 - `ui/` — Matplotlib ベースの波形表示UI
-  - `visualizer.py` — `InverterVisualizer` クラス（5段サブプロット + 6スライダー + m_a表示）
+  - `visualizer.py` — `InverterVisualizer` クラス（6段サブプロット + 8スライダー + PWM方式選択 + FFT切替 + 非理想モデル + 理論比較表示）
 - `main.py` — エントリポイント（デフォルトパラメータの一元管理、V_ll は RMS 値）
-- `tests/test_simulation.py` — 物理妥当性テスト（16件）
+- `tests/test_simulation.py` — 物理妥当性テスト（34件）
 - `docs/user_guide.md` — 利用手順書
 
 詳細は `architecture.md`、`implementation_plan.md`、`improvement_plan.md` を参照。
@@ -26,7 +26,7 @@ Python + NumPy + Matplotlib（widgets）構成。**STEP 1〜8 の初期実装＋
 
 ```bash
 python main.py                    # GUI 起動
-python -m pytest tests/ -v        # テスト実行（16件）
+python -m pytest tests/ -v        # テスト実行（34件）
 ```
 
 ## コーディング規約
@@ -51,7 +51,7 @@ python -m pytest tests/ -v        # テスト実行（16件）
 
 ### 数値計算ルール
 - 配列演算には NumPy のベクトル演算を使用し、Python の for ループは避ける
-  - **例外**: `rl_load_solver.py` のRK4時間ステップ積分（ステップ間依存のため for ループ許容）
+  - **例外**: `rl_load_solver.py` の厳密離散時間更新（ステップ間依存のため for ループ許容）
 - 浮動小数点比較には許容誤差（`np.allclose`）を使用する
 - 時間配列は `np.arange` ではなく `np.linspace` で生成する（端点精度の確保）
 
@@ -70,9 +70,10 @@ python -m pytest tests/ -v        # テスト実行（16件）
 ### データフロー（実装済み）
 ```
 main.py → InverterVisualizer._run_simulation()
-  → generate_reference() → generate_carrier() → compare_pwm()
+  → generate_reference(mode=...) → apply_sampling_mode() → generate_carrier()
+  → compare_pwm() → apply_deadtime()
   → calc_inverter_voltage() → solve_rl_load()
-  → analyze_spectrum()
+  → analyze_spectrum(window_mode=...)
   → _draw_waveforms()
 ```
 
@@ -82,12 +83,13 @@ main.py → InverterVisualizer._run_simulation()
 
 | テストクラス | 検証内容 |
 |---|---|
-| `TestReferenceGenerator` | 三相和=0、値域[-1,1]、過変調クランプ、零電圧 |
+| `TestReferenceGenerator` | 三相和=0、値域[-1,1]、過変調クランプ、零電圧、三次高調波注入 |
 | `TestCarrierGenerator` | 値域[-1,1]、±1到達 |
-| `TestPwmComparator` | スイッチング値{0,1}、零変調時の挙動 |
-| `TestInverterVoltage` | 線間電圧和=0、相電圧和=0、3レベル確認 |
-| `TestRlLoadSolver` | 定常電流振幅の理論値一致（5%以内）、三相電流和≈0 |
-| `TestFftAnalyzer` | 純正弦波THD≈0、基本波振幅一致、PWMスペクトル検証 |
+| `TestPwmComparator` | スイッチング値{0,1}、零変調時の挙動、デッドタイム挿入、規則サンプリング |
+| `TestInverterVoltage` | 線間電圧和=0、相電圧和=0、3レベル確認、固定電圧降下、電流方向依存導通 |
+| `TestRlLoadSolver` | 定常電流振幅の理論値一致（5%以内）、三相電流和≈0、解析解一致、R=0極限 |
+| `TestNonidealInverterModel` | 非理想モデルでの基本波低下 |
+| `TestFftAnalyzer` | 純正弦波THD≈0、基本波振幅一致、PWMスペクトル検証、位相/再構成、RMS/THD精度 |
 
 ## 禁止事項
 

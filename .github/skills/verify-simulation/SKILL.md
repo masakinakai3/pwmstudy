@@ -18,6 +18,8 @@ description: "Verify three-phase PWM inverter simulation results. Use when check
 ```python
 import numpy as np
 
+from simulation.fft_analyzer import analyze_spectrum
+
 # 電圧（変調信号）
 assert np.allclose(v_u + v_v + v_w, 0, atol=1e-10), "変調信号の三相和 ≠ 0"
 
@@ -51,13 +53,13 @@ assert set(unique_levels).issubset({-V_dc, 0, V_dc})
 ### Step 3: 定常状態の理論値比較
 ```python
 # 基本波電流振幅の理論値
-V_ph = V_ll / np.sqrt(3)
+fft_v = analyze_spectrum(v_uN[steady], dt, f)
 Z = np.sqrt(R**2 + (2 * np.pi * f * L)**2)
-I_theory = V_ph / Z
+I_theory = fft_v["fundamental_mag"] / Z
 
-# 定常状態の電流ピーク値を測定
-i_steady = i_u[len(i_u) // 2:]
-I_measured = (np.max(i_steady) - np.min(i_steady)) / 2
+# 定常状態の電流基本波振幅を測定
+fft_i = analyze_spectrum(i_u[steady], dt, f)
+I_measured = fft_i["fundamental_mag"]
 
 # 5%以内の一致を確認
 error = abs(I_measured - I_theory) / I_theory
