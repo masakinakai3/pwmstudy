@@ -346,6 +346,7 @@ function updateSection1Header(data, svpwmSnapshot) {
   const refToggles = document.getElementById("section1ReferenceToggles");
   const animationControls = document.getElementById("section1AnimationControls");
   const svInfo = document.getElementById("section1SvpwmInfo");
+  const timeSlider = document.getElementById("svpwmTimeSlider");
   const inSpaceVectorMode = isSpaceVectorMode(data.meta.modulation_mode);
 
   if (!inSpaceVectorMode || !svpwmSnapshot) {
@@ -353,15 +354,23 @@ function updateSection1Header(data, svpwmSnapshot) {
     refToggles.hidden = false;
     animationControls.hidden = true;
     svInfo.hidden = true;
-    svInfo.innerHTML = "";
+    if (timeSlider) {
+      timeSlider.value = "0";
+    }
     return;
   }
 
   title.textContent = "空間ベクトル: セクタと1キャリア合成";
   refToggles.hidden = true;
   animationControls.hidden = false;
-  svInfo.hidden = true;
-  svInfo.innerHTML = "";
+  svInfo.hidden = false;
+
+  // スライダーの初期化
+  if (timeSlider && svpwmSnapshot.event_times_rel_s && svpwmSnapshot.event_times_rel_s.length > 0) {
+    timeSlider.max = "100";
+    timeSlider.value = "0";
+  }
+  updateSvpwmSectorInfo(svpwmSnapshot);
 }
 
 const controlDefinitions = [
@@ -436,6 +445,43 @@ function updateSvpwmAnimationPlayPauseLabel() {
   button.textContent = svpwmAnimationPaused ? "再生" : "停止";
 }
 
+function updateSvpwmSectorInfo(snapshot) {
+  const sectorLabel = document.getElementById("svpwmSectorLabel");
+  const t1Label = document.getElementById("svpwmT1Label");
+  const t2Label = document.getElementById("svpwmT2Label");
+  const t0Label = document.getElementById("svpwmT0Label");
+  const alphaLabel = document.getElementById("svpwmAlphaLabel");
+  const betaLabel = document.getElementById("svpwmBetaLabel");
+
+  if (!sectorLabel) {
+    return;
+  }
+
+  if (!snapshot || !Number.isFinite(snapshot.sector)) {
+    sectorLabel.textContent = "—";
+    t1Label.textContent = "—";
+    t2Label.textContent = "—";
+    t0Label.textContent = "—";
+    alphaLabel.textContent = "—";
+    betaLabel.textContent = "—";
+    return;
+  }
+
+  const T = snapshot.switchingPeriod || 1.0;
+  const t1Ratio = Number.isFinite(snapshot.t1) ? (snapshot.t1 / T * 100).toFixed(1) : "—";
+  const t2Ratio = Number.isFinite(snapshot.t2) ? (snapshot.t2 / T * 100).toFixed(1) : "—";
+  const t0Ratio = Number.isFinite(snapshot.t0) ? (snapshot.t0 / T * 100).toFixed(1) : "—";
+  const alpha = Number.isFinite(snapshot.alphaNow) ? snapshot.alphaNow.toFixed(3) : "—";
+  const beta = Number.isFinite(snapshot.betaNow) ? snapshot.betaNow.toFixed(3) : "—";
+
+  sectorLabel.textContent = String(snapshot.sector || "—");
+  t1Label.textContent = `${t1Ratio}%`;
+  t2Label.textContent = `${t2Ratio}%`;
+  t0Label.textContent = `${t0Ratio}%`;
+  alphaLabel.textContent = alpha;
+  betaLabel.textContent = beta;
+}
+
 function getSvpwmAnimationSpeed() {
   const speedControl = document.getElementById("section1AnimSpeed");
   const speed = Number(speedControl ? speedControl.value : 1.0);
@@ -484,6 +530,15 @@ function applySvpwmAnimationFrame(pointIndex) {
     if (typeof onFrame === "function") {
       onFrame(wrappedIndex);
     }
+    // スライダーを自動追従
+    const slider = document.getElementById("svpwmTimeSlider");
+    const timeLabel = document.getElementById("svpwmTimeLabel");
+    if (slider) {
+      slider.value = String(Math.round((wrappedIndex / (windowCount - 1)) * 100));
+    }
+    if (timeLabel && Number.isFinite(window.start_s)) {
+      timeLabel.textContent = `${(window.start_s * 1000.0).toFixed(2)} ms`;
+    }
   } else {
     const n = Math.min(alphaSeries.length, betaSeries.length);
     if (n < 1) {
@@ -501,6 +556,11 @@ function applySvpwmAnimationFrame(pointIndex) {
     );
     if (typeof onFrame === "function") {
       onFrame(wrappedIndex);
+    }
+    // スライダーを自動追従
+    const slider = document.getElementById("svpwmTimeSlider");
+    if (slider) {
+      slider.value = String(Math.round((wrappedIndex / (n - 1)) * 100));
     }
   }
 }
@@ -543,6 +603,37 @@ function stepSvpwmAnimation(delta) {
   applySvpwmAnimationFrame(svpwmAnimationState.cursor + delta);
 }
 
+function updateSvpwmTimeSliderValue(normalizedValue) {
+  if (!svpwmAnimationState || normalizedValue < 0 || normalizedValue > 1.0) {
+    return;
+  }
+
+  const { windows, alphaSeries, betaSeries } = svpwmAnimationState;
+
+  // スライダー値からアニメーション フレームインデックスを計算
+  let targetIndex = 0;
+  if (windows && windows.length > 0) {
+    targetIndex = Math.floor(normalizedValue * (windows.length - 1));
+  } else {
+    const n = Math.max(1, Math.min(alphaSeries.length, betaSeries.length));
+    targetIndex = Math.floor(normalizedValue * (n - 1));
+  }
+
+  // フレームを適用（onFrame 経由で renderSvpwmPatternPlot / updateSvpwmSectorInfo が呼ばれる）
+  applySvpwmAnimationFrame(targetIndex);
+
+  // 時刻ラベルを更新
+  const timeLabel = document.getElementById("svpwmTimeLabel");
+  if (timeLabel) {
+    if (windows && windows[targetIndex] && Number.isFinite(windows[targetIndex].start_s)) {
+      const timeMs = (windows[targetIndex].start_s * 1000.0).toFixed(2);
+      timeLabel.textContent = `${timeMs} ms`;
+    } else {
+      timeLabel.textContent = `フレーム ${targetIndex + 1}`;
+    }
+  }
+}
+
 function startSvpwmVectorAnimation(
   plotId,
   alphaSeries,
@@ -551,6 +642,8 @@ function startSvpwmVectorAnimation(
   headTraceIndex,
   onFrame = null,
   windows = null,
+  switchingPeriod = null,
+  eventTimesRelS = null,
 ) {
   stopSvpwmVectorAnimation();
 
@@ -569,6 +662,8 @@ function startSvpwmVectorAnimation(
     windows,
     cursor: 0,
     stride: windows ? 1 : Math.max(1, Math.floor(n / 80)),
+    switchingPeriod,
+    eventTimesRelS,
   };
   svpwmAnimationPaused = false;
   updateSvpwmAnimationPlayPauseLabel();
@@ -741,6 +836,15 @@ function initializeControls() {
   document.getElementById("baselineClearButton").addEventListener("click", clearBaseline);
   document.getElementById("exportJsonButton").addEventListener("click", exportCurrentJson);
   document.getElementById("exportPngButton").addEventListener("click", exportDashboardPng);
+
+  // SVPWM time slider
+  const timeSlider = document.getElementById("svpwmTimeSlider");
+  if (timeSlider) {
+    timeSlider.addEventListener("input", () => {
+      setSvpwmAnimationPaused(true);
+      updateSvpwmTimeSliderValue(Number(timeSlider.value) / 100.0);
+    });
+  }
 }
 
 function collectDisplayValues() {
@@ -1183,6 +1287,7 @@ function renderPlots(data) {
             event_times_rel_s: Array.isArray(window.event_times_rel_s) ? window.event_times_rel_s : [],
           };
           renderSvpwmPatternPlot(windowSnapshot, 0.0);
+          updateSvpwmSectorInfo(windowSnapshot);
         } else if (alphaOneCycle[pointIndex] !== undefined && betaOneCycle[pointIndex] !== undefined) {
           const zeroVector = isTwoPhaseSvpwm
             ? inferTwoPhaseZeroVector(uOneCycle[pointIndex], vOneCycle[pointIndex], wOneCycle[pointIndex])
@@ -1194,9 +1299,12 @@ function renderPlots(data) {
             zeroVector,
           );
           renderSvpwmPatternPlot(dynamicSnapshot, 0.0);
+          updateSvpwmSectorInfo(dynamicSnapshot);
         }
       },
       windowsToAnimate,
+      svpwmSnapshot.switchingPeriod,
+      svpwmSnapshot.event_times_rel_s,
     );
     const initialWindow = windowsToAnimate && windowsToAnimate[0] ? windowsToAnimate[0] : null;
     if (initialWindow) {

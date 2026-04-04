@@ -133,8 +133,15 @@
               </label>
             </div>
             <div id="section1AnimationControls" class="section1-animation-controls" hidden>
+              <div class="section1-timeline-control">
+                <label class="section1-slider-label">
+                  <span>時刻</span>
+                  <input type="range" id="svpwmTimeSlider" class="section1-time-slider" min="0" max="100" step="1" value="0">
+                  <span id="svpwmTimeLabel" class="section1-time-label">0.00 μs</span>
+                </label>
+              </div>
               <label class="section1-animation-speed">
-                <span>Animation</span>
+                <span>再生速度</span>
                 <select id="section1AnimSpeed">
                   <option value="0.25">0.25x</option>
                   <option value="0.5">0.5x</option>
@@ -149,7 +156,34 @@
                 <button type="button" id="section1AnimNext" class="section1-anim-button">コマ送り</button>
               </div>
             </div>
-            <div id="section1SvpwmInfo" class="svpwm-info" hidden></div>
+            <div id="section1SvpwmInfo" class="svpwm-info section1-svpwm-info" hidden>
+              <div class="svpwm-info-grid">
+                <div class="svpwm-info-item">
+                  <span class="svpwm-info-label">Sector</span>
+                  <strong id="svpwmSectorLabel" class="svpwm-info-value">—</strong>
+                </div>
+                <div class="svpwm-info-item">
+                  <span class="svpwm-info-label">t1/T</span>
+                  <strong id="svpwmT1Label" class="svpwm-info-value">—</strong>
+                </div>
+                <div class="svpwm-info-item">
+                  <span class="svpwm-info-label">t2/T</span>
+                  <strong id="svpwmT2Label" class="svpwm-info-value">—</strong>
+                </div>
+                <div class="svpwm-info-item">
+                  <span class="svpwm-info-label">t0/T</span>
+                  <strong id="svpwmT0Label" class="svpwm-info-value">—</strong>
+                </div>
+                <div class="svpwm-info-item">
+                  <span class="svpwm-info-label">α [p.u.]</span>
+                  <strong id="svpwmAlphaLabel" class="svpwm-info-value">—</strong>
+                </div>
+                <div class="svpwm-info-item">
+                  <span class="svpwm-info-label">β [p.u.]</span>
+                  <strong id="svpwmBetaLabel" class="svpwm-info-value">—</strong>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="plot-grid section1-split section1-single" id="section1PlotGrid">
             <div class="plot-card">

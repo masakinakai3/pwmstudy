@@ -21,6 +21,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -491,6 +495,114 @@ select,
   height: 100%;
   min-height: 320px;
   min-width: 0;
+}
+
+/* SVPWM Time Slider Controls */
+.section1-timeline-control {
+  margin-bottom: 12px;
+}
+
+.section1-slider-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.section1-slider-label span:first-child {
+  min-width: 50px;
+}
+
+.section1-time-slider {
+  flex: 1;
+  min-width: 150px;
+  height: 6px;
+  border-radius: 3px;
+  border: none;
+  padding: 0;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-deep) 100%);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.section1-time-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--accent-soft);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(193, 79, 44, 0.24);
+}
+
+.section1-time-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--accent-soft);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(193, 79, 44, 0.24);
+}
+
+.section1-time-label {
+  display: inline-block;
+  min-width: 80px;
+  text-align: right;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(193, 79, 44, 0.06);
+  color: var(--accent);
+}
+
+.section1-animation-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.section1-svpwm-info {
+  flex-basis: 100%;
+}
+
+.svpwm-info-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+
+.svpwm-info-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.svpwm-info-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.svpwm-info-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: var(--font-display);
+  color: var(--accent);
 }
 
 @media (max-width: 1100px) {
