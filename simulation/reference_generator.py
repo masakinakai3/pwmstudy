@@ -21,7 +21,8 @@ def generate_reference(
     f: float,     # [Hz] 出力周波数
     V_dc: float,  # [V] 直流母線電圧
     t: np.ndarray,  # [s] 時間配列
-    mode: str = "sinusoidal"
+    mode: str = "sinusoidal",
+    limit_linear: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """三相正弦波の正規化変調信号を生成する.
 
@@ -33,6 +34,7 @@ def generate_reference(
         mode: 参照生成方式
             sinusoidal: 正弦波参照
             third_harmonic: 三次高調波注入参照
+        limit_linear: True の場合は線形変調上限でクランプする
 
     Returns:
         (v_u, v_v, v_w): 各相の正規化変調信号、値域 [-1, 1]
@@ -41,8 +43,9 @@ def generate_reference(
 
     V_ph_peak = V_ll * np.sqrt(2.0) / np.sqrt(3.0)  # [V] 相電圧ピーク値 (V_ll は RMS)
     m_a = 2.0 * V_ph_peak / V_dc                      # 変調率
-    m_a_limit = THIRD_HARMONIC_LIMIT if mode == "third_harmonic" else 1.0
-    m_a = min(m_a, m_a_limit)  # 線形変調範囲でクランプ
+    if limit_linear:
+        m_a_limit = THIRD_HARMONIC_LIMIT if mode == "third_harmonic" else 1.0
+        m_a = min(m_a, m_a_limit)  # 線形変調範囲でクランプ
 
     omega = 2.0 * np.pi * f   # [rad/s] 角周波数
 

@@ -75,8 +75,8 @@ SCENARIO_PRESETS = [
     },
     {
         "label": "⑤過変調",
-        "hint": "V_LL = 220V は m_a > 1 の過変調。Third Harmonic Injection に切り替えると線形範囲が拡張する。",
-        "focus": "方式ごとの線形変調上限の違いを比較する。",
+        "hint": "V_LL = 220V で m_a > 1。Overmod View ならクランプせず、参照波と出力の変化を観察できる。",
+        "focus": "線形クランプ有無での過変調挙動を比較する。",
         "sliders": {
             "V_dc": 300.0,
             "V_ll": 220.0,
@@ -87,7 +87,7 @@ SCENARIO_PRESETS = [
             "R": 10.0,
             "L": 10.0,
         },
-        "pwm_mode": "natural",
+        "pwm_mode": "natural_overmod",
         "fft_target": "voltage",
         "fft_window": "hann",
     },

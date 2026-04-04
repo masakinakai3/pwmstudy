@@ -114,6 +114,13 @@ class TestReferenceGenerator:
         for v in (v_u, v_v, v_w):
             assert np.all((-1.0 - 1e-10 <= v) & (v <= 1.0 + 1e-10))
 
+    def test_overmodulation_view_disables_linear_clamp(self) -> None:
+        """limit_linear=False では参照が ±1 を超えた過変調を観察できる."""
+        v_u, v_v, v_w = generate_reference(V_DC * 2, F, V_DC, T, limit_linear=False)
+        max_abs = max(np.max(np.abs(v_u)), np.max(np.abs(v_v)), np.max(np.abs(v_w)))
+
+        assert max_abs > 1.0
+
     def test_zero_voltage(self) -> None:
         """V_ll=0 のとき全相が0."""
         v_u, v_v, v_w = generate_reference(0.0, F, V_DC, T)
@@ -708,6 +715,29 @@ class TestSimulationRunnerContract:
         assert response["metrics"]["THD_I"] >= 0.0
         assert response["metrics"]["m_a_limit"] > 1.0
 
+    def test_natural_overmod_mode_reports_unclamped_m_a(self) -> None:
+        """natural_overmod では m_a が線形上限でクランプされない."""
+        params = {
+            "V_dc": 300.0,
+            "V_ll": 220.0,
+            "f": 50.0,
+            "f_c": 5000.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 0.01,
+            "pwm_mode": "natural_overmod",
+            "fft_target": "voltage",
+            "fft_window": "hann",
+        }
+
+        results = run_simulation(params)
+
+        assert results["meta"]["pwm_mode"] == "natural_overmod"
+        assert results["metrics"]["limit_linear"] is False
+        assert results["metrics"]["m_a"] > 1.0
+        assert results["metrics"]["m_a"] == results["metrics"]["m_a_raw"]
+
 
 class TestApplicationServices:
     """web 移行 Phase 1 の application サービス層テスト."""
@@ -929,3 +959,27 @@ class TestWebApi:
         assert data["meta"]["fft_target"] == "i_u"
         assert data["fft"]["target"] == "current"
         assert data["metrics"]["m_a_limit"] > 1.0
+
+    def test_simulate_endpoint_accepts_overmod_mode(self) -> None:
+        """overmod 観察モードを受理し、m_a が 1 を超えるケースを返す."""
+        client = TestClient(app)
+        payload = {
+            "V_dc": 300.0,
+            "V_ll_rms": 220.0,
+            "f": 50.0,
+            "f_c": 5000.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 0.01,
+            "pwm_mode": "natural_overmod",
+            "fft_target": "v_uv",
+            "fft_window": "hann",
+        }
+
+        response = client.post("/simulate", json=payload)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["meta"]["pwm_mode"] == "natural_overmod"
+        assert data["metrics"]["m_a"] > 1.0

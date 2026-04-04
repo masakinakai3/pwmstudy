@@ -33,6 +33,7 @@ PWM_MODE_LABELS = {
     "natural": "Natural Sampling",
     "regular": "Regular Sampling",
     "third_harmonic": "Third Harmonic Injection",
+    "natural_overmod": "Natural Sampling (Overmod View)",
 }
 FFT_TARGET_LABELS = {
     "voltage": "Line Voltage v_uv",
@@ -465,7 +466,8 @@ class InverterVisualizer:
         V_ph_peak = results["V_ll"] * np.sqrt(2.0) / np.sqrt(3.0)  # [V] V_ll は RMS
         m_a_raw = 2.0 * V_ph_peak / results["V_dc"]  # クランプ前の変調率
         m_a_limit = results["m_a_limit"]
-        m_a = min(m_a_raw, m_a_limit)
+        limit_linear = bool(results.get("limit_linear", True))
+        m_a = min(m_a_raw, m_a_limit) if limit_linear else m_a_raw
         m_f = results["m_f"]
         t_d_us = results["t_d"] * 1.0e6         # [us]
         V_on = results["V_on"]                  # [V]
@@ -480,10 +482,11 @@ class InverterVisualizer:
         err_pct = (abs(I_measured - I_theory) / I_theory * 100.0
                    if I_theory > 1e-6 else 0.0)
 
-        clamp_str = (
-            f" (クランプ中: 上限 {m_a_limit:.3f})"
-            if m_a_raw > m_a_limit else ""
-        )
+        clamp_str = ""
+        if limit_linear and m_a_raw > m_a_limit:
+            clamp_str = f" (クランプ中: 上限 {m_a_limit:.3f})"
+        if not limit_linear and m_a_raw > m_a_limit:
+            clamp_str = f" (過変調観察中: 線形上限 {m_a_limit:.3f} を超過)"
         info_lines = [
             f"方式 = {results['pwm_mode_label']}",
             f"m_a = {m_a:.3f}{clamp_str}    "
@@ -515,8 +518,10 @@ class InverterVisualizer:
                 f"I1={bl['I_measured']:.2f}A (Δ{delta_I1:+.2f}A)"
             )
         self._info_text.set_text("\n".join(info_lines))
-        if m_a_raw > m_a_limit:
+        if limit_linear and m_a_raw > m_a_limit:
             self._info_text.get_bbox_patch().set_facecolor("lightsalmon")
+        elif (not limit_linear) and m_a_raw > m_a_limit:
+            self._info_text.get_bbox_patch().set_facecolor("moccasin")
         else:
             self._info_text.get_bbox_patch().set_facecolor("lightyellow")
 

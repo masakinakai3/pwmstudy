@@ -29,6 +29,7 @@ PWM_MODE_LABELS = {
     "natural": "Natural Sampling",
     "regular": "Regular Sampling",
     "third_harmonic": "Third Harmonic Injection",
+    "natural_overmod": "Natural Sampling (Overmod View)",
 }
 FFT_TARGET_LABELS = {
     "voltage": "Line Voltage v_uv",
@@ -170,8 +171,16 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
 
     reference_mode = "third_harmonic" if pwm_mode == "third_harmonic" else "sinusoidal"
     sampling_mode = "regular" if pwm_mode == "regular" else "natural"
+    limit_linear = pwm_mode != "natural_overmod"
 
-    v_u_ref, v_v_ref, v_w_ref = generate_reference(V_ll, f, V_dc, t, mode=reference_mode)
+    v_u_ref, v_v_ref, v_w_ref = generate_reference(
+        V_ll,
+        f,
+        V_dc,
+        t,
+        mode=reference_mode,
+        limit_linear=limit_linear,
+    )
     v_u_mod, v_v_mod, v_w_mod = apply_sampling_mode(
         v_u_ref,
         v_v_ref,
@@ -243,7 +252,7 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
     V_ph_peak = V_ll * np.sqrt(2.0) / np.sqrt(3.0)  # [V] V_ll は RMS
     m_a_raw = 2.0 * V_ph_peak / V_dc
     m_a_limit = THIRD_HARMONIC_LIMIT if pwm_mode == "third_harmonic" else 1.0
-    m_a = min(m_a_raw, m_a_limit)
+    m_a = min(m_a_raw, m_a_limit) if limit_linear else m_a_raw
 
     result = {
         "meta": {
@@ -321,6 +330,7 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
             "m_a": m_a,
             "m_a_raw": m_a_raw,
             "m_a_limit": m_a_limit,
+            "limit_linear": limit_linear,
             "m_f": f_c / f,
             "Z": Z,
             "phi": phi,
