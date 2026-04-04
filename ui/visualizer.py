@@ -36,8 +36,8 @@ PWM_MODE_LABELS = {
     "svpwm": "Space Vector PWM",
 }
 PHASE_MODULATION_LABELS = {
-    "three_phase": "SVPWM 3-Phase",
-    "two_phase": "SVPWM 2-Phase",
+    "three_phase": "3-Phase",
+    "two_phase": "2-Phase",
 }
 FFT_TARGET_LABELS = {
     "voltage": "Line Voltage v_uv",
