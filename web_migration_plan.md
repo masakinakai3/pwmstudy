@@ -157,6 +157,8 @@
 }
 ```
 
+API 入力は simulation 層に合わせて **SI 単位系** とする。したがって、`f` と `f_c` は [Hz]、`t_d` は [s]、`L` は [H] で受け付ける。既存 desktop UI の kHz / us / mH 表示は、フロントエンド側で変換してから API へ渡す。
+
 `pwm_mode` は既存 UI と同じく `natural` / `regular` / `third_harmonic` を使う。内部では現行実装に合わせて、
 
 - `natural` → `reference_mode="sinusoidal"` + `sampling_mode="natural"`
