@@ -27,6 +27,8 @@ let scenarioFetchFailed = false;
 let svpwmAnimationTimer = null;
 let svpwmAnimationState = null;
 let svpwmAnimationPaused = false;
+let simulationRequestSeq = 0;
+let activeSimulationController = null;
 
 const SVPWM_ANIMATION_BASE_INTERVAL_MS = 40;
 
@@ -908,6 +910,7 @@ function applyScenario(index) {
 
 function renderPlots(data) {
   stopSvpwmVectorAnimation();
+  Plotly.purge("referencePlot");
   const svpwmPatternCard = document.getElementById("svpwmPatternCard");
   const section1PlotGrid = document.getElementById("section1PlotGrid");
 
@@ -1055,19 +1058,7 @@ function renderPlots(data) {
       Math.max(...betaOneCycle.map(Math.abs)),
     ) * 1.2;
     const radialBound = Math.max(1.1, radialBoundAuto);
-    const alphaMin = Math.min(...alphaOneCycle);
-    const alphaMax = Math.max(...alphaOneCycle);
-    const betaMin = Math.min(...betaOneCycle);
-    const betaMax = Math.max(...betaOneCycle);
-    const centerAlpha = 0.5 * (alphaMin + alphaMax);
-    const centerBeta = 0.5 * (betaMin + betaMax);
-    const halfSpan = Math.max(
-      0.55,
-      1.15 * Math.max(
-        Math.max(Math.abs(alphaMin - centerAlpha), Math.abs(alphaMax - centerAlpha)),
-        Math.max(Math.abs(betaMin - centerBeta), Math.abs(betaMax - centerBeta)),
-      ),
-    );
+    const fixedVectorAxisBound = data.meta.overmod_view ? 2.2 : 1.1;
     const vectorTraces = [];
     for (let k = 0; k < 6; k += 1) {
       const angle = k * Math.PI / 3.0;
@@ -1150,16 +1141,20 @@ function renderPlots(data) {
       xaxis: {
         ...plotTheme.xaxis,
         title: "alpha [p.u.]",
-        range: [centerAlpha - halfSpan, centerAlpha + halfSpan],
+        range: [-fixedVectorAxisBound, fixedVectorAxisBound],
+        autorange: false,
+        constrain: "domain",
         zeroline: true,
         automargin: true,
       },
       yaxis: {
         ...plotTheme.yaxis,
         title: "beta [p.u.]",
-        range: [centerBeta - halfSpan, centerBeta + halfSpan],
+        range: [-fixedVectorAxisBound, fixedVectorAxisBound],
+        autorange: false,
         scaleanchor: "x",
         scaleratio: 1,
+        constrain: "domain",
         zeroline: true,
         automargin: true,
       },
@@ -1277,37 +1272,103 @@ function renderPlots(data) {
     Plotly.purge("svpwmPatternPlot");
   }
 
+  let switchingTimeMsDisplay = switchingTimeMs;
+  let switchingUDisplay = switchingPlot.u;
+  let switchingVDisplay = switchingPlot.v;
+  let switchingWDisplay = switchingPlot.w;
+  let switchingTitle = "スイッチングパターン";
+  let displayMaskForSectors = null;
+
+  if (inSpaceVectorMode && switchingTimeMs.length > 0) {
+    const periodMs = 1000.0 / data.params.f;
+    const startMs = Math.max(switchingTimeMs[0], switchingTimeMs[switchingTimeMs.length - 1] - periodMs);
+    displayMaskForSectors = switchingTimeMs.map((timeValueMs) => timeValueMs >= startMs);
+    switchingTimeMsDisplay = switchingTimeMs.filter((_, index) => displayMaskForSectors[index]);
+    switchingUDisplay = switchingPlot.u.filter((_, index) => displayMaskForSectors[index]);
+    switchingVDisplay = switchingPlot.v.filter((_, index) => displayMaskForSectors[index]);
+    switchingWDisplay = switchingPlot.w.filter((_, index) => displayMaskForSectors[index]);
+    switchingTitle = "スイッチングパターン（電圧指令1周期）";
+  }
+
+  // セクターシェーディング用の shapes を生成（空間ベクトルモードのみ）
+  const switchingPlotShapes = [];
+  const sectorColors = {
+    1: "rgba(193, 79, 44, 0.08)",    // Sector 1: 赤
+    2: "rgba(217, 119, 6, 0.08)",    // Sector 2: 橙
+    3: "rgba(78, 122, 118, 0.08)",   // Sector 3: 緑
+    4: "rgba(59, 130, 246, 0.08)",   // Sector 4: 青
+    5: "rgba(106, 84, 149, 0.08)",   // Sector 5: 紫
+    6: "rgba(236, 72, 153, 0.08)",   // Sector 6: ピンク
+  };
+
+  if (inSpaceVectorMode && observer && observer.windows && observer.windows.length > 0) {
+    const windows = observer.windows;
+    // 表示範囲内のセクターウィンドウのみを処理
+    const minDisplayMs = switchingTimeMsDisplay.length > 0 ? switchingTimeMsDisplay[0] : 0;
+    const maxDisplayMs = switchingTimeMsDisplay.length > 0 ? switchingTimeMsDisplay[switchingTimeMsDisplay.length - 1] : 0;
+
+    for (let i = 0; i < windows.length; i++) {
+      const window = windows[i];
+      const nextWindow = windows[i + 1];
+      const windowStartMs = window.start_s * 1000.0;
+      const windowEndMs = nextWindow ? nextWindow.start_s * 1000.0 : windowStartMs + 1;
+
+      // 表示範囲との交差チェック
+      if (windowEndMs < minDisplayMs || windowStartMs > maxDisplayMs) {
+        continue; // 表示範囲外のセクターはスキップ
+      }
+
+      // クリップ処理：表示範囲に合わせる
+      const clippedStartMs = Math.max(windowStartMs, minDisplayMs);
+      const clippedEndMs = Math.min(windowEndMs, maxDisplayMs + 1);
+      const sectorNum = window.sector || 1;
+      const sectorColor = sectorColors[sectorNum] || sectorColors[1];
+
+      switchingPlotShapes.push({
+        type: "rect",
+        x0: clippedStartMs,
+        x1: clippedEndMs,
+        y0: -0.4,
+        y1: 5.4,
+        fillcolor: sectorColor,
+        opacity: 1.0,
+        line: { width: 0 },
+        layer: "below",
+      });
+    }
+  }
+
   Plotly.react("switchingPlot", [
     {
-      x: switchingTimeMs,
-      y: switchingPlot.u.map((value) => value + 4),
-      customdata: switchingPlot.u,
+      x: switchingTimeMsDisplay,
+      y: switchingUDisplay.map((value) => value + 4),
+      customdata: switchingUDisplay,
       name: "S_u",
       mode: "lines",
-      line: { color: "#c14f2c", width: 2, shape: "hv" },
+      line: { color: "#c14f2c", width: 3, shape: "hv" },
       hovertemplate: "S_u: %{customdata}<extra></extra>",
     },
     {
-      x: switchingTimeMs,
-      y: switchingPlot.v.map((value) => value + 2),
-      customdata: switchingPlot.v,
+      x: switchingTimeMsDisplay,
+      y: switchingVDisplay.map((value) => value + 2),
+      customdata: switchingVDisplay,
       name: "S_v",
       mode: "lines",
-      line: { color: "#4e7a76", width: 2, shape: "hv" },
+      line: { color: "#4e7a76", width: 3, shape: "hv" },
       hovertemplate: "S_v: %{customdata}<extra></extra>",
     },
     {
-      x: switchingTimeMs,
-      y: switchingPlot.w,
-      customdata: switchingPlot.w,
+      x: switchingTimeMsDisplay,
+      y: switchingWDisplay,
+      customdata: switchingWDisplay,
       name: "S_w",
       mode: "lines",
-      line: { color: "#6a5495", width: 2, shape: "hv" },
+      line: { color: "#6a5495", width: 3, shape: "hv" },
       hovertemplate: "S_w: %{customdata}<extra></extra>",
     },
   ], {
     ...plotTheme,
-    title: "スイッチングパターン",
+    title: switchingTitle,
     xaxis: { ...plotTheme.xaxis, title: "時間 [ms]" },
     yaxis: {
       ...plotTheme.yaxis,
@@ -1316,6 +1377,7 @@ function renderPlots(data) {
       ticktext: ["S_w=0", "S_w=1", "S_v=0", "S_v=1", "S_u=0", "S_u=1"],
       range: [-0.4, 5.4],
     },
+    shapes: switchingPlotShapes,
   }, { responsive: true, displayModeBar: false });
 
   const lineVoltageTraces = [];
@@ -1603,6 +1665,15 @@ async function fetchScenarios() {
 }
 
 async function runSimulation() {
+  const requestSeq = simulationRequestSeq + 1;
+  simulationRequestSeq = requestSeq;
+
+  if (activeSimulationController) {
+    activeSimulationController.abort();
+  }
+  const controller = new AbortController();
+  activeSimulationController = controller;
+
   try {
     setStatus("計算中", "シミュレーションを再計算しています。");
     const payload = collectPayload();
@@ -1615,6 +1686,7 @@ async function runSimulation() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      signal: controller.signal,
     });
 
     if (!response.ok) {
@@ -1622,6 +1694,10 @@ async function runSimulation() {
     }
 
     const data = await response.json();
+    if (requestSeq !== simulationRequestSeq) {
+      return;
+    }
+
     currentResponse = data;
     renderMetrics(data.metrics);
     renderTheoryPanel(data.metrics);
@@ -1635,8 +1711,15 @@ async function runSimulation() {
       scenarioFetchFailed,
     );
   } catch (error) {
+    if (error && error.name === "AbortError") {
+      return;
+    }
     console.error(error);
     setStatus("API エラー", "シミュレーション結果を取得できませんでした。", true);
+  } finally {
+    if (activeSimulationController === controller) {
+      activeSimulationController = null;
+    }
   }
 }
 
