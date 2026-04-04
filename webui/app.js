@@ -7,9 +7,10 @@ const defaultDisplayValues = {
   V_on: 0.0,
   R: 10.0,
   L_mh: 10.0,
-  pwm_mode: "natural",
+  reference_mode: "sinusoidal",
+  sampling_mode: "natural",
+  clamp_mode: "continuous",
   overmod_view: false,
-  svpwm_mode: "three_phase",
   fft_target: "v_uv",
   fft_window: "hann",
   show_u_ref: true,
@@ -23,12 +24,40 @@ let baselineResponse = null;
 let debounceHandle = null;
 let scenarioFetchFailed = false;
 
-const phaseModulationHints = {
-  three_phase: "3相変調: 連続PWM。3相すべてが連続的にスイッチングします。",
-  dpwm1: "DPWM1: 山頂・谷底付近で60度クランプし、ピーク時のスイッチングを休止します。",
-  dpwm2: "DPWM2: DPWM1 と相補的な位置で60度クランプし、休止区間が半周期ずれます。",
-  dpwm3: "DPWM3: 山頂そのものではなく両脇でクランプし、M字型に近い指令波形になります。",
+const referenceModeHints = {
+  sinusoidal: "Sinusoidal Reference: 基本的な SPWM 系の基準波です。",
+  third_harmonic: "Third Harmonic Injection: 零相成分で線形変調範囲を拡張します。",
+  minmax: "Min-Max Zero-Sequence: carrier-based な SVPWM 相当の基準波です。",
 };
+
+const clampModeHints = {
+  continuous: "Continuous PWM: 全相が連続的にスイッチングします。",
+  dpwm1: "DPWM1: 山頂・谷底付近で60度クランプします。",
+  dpwm2: "DPWM2: DPWM1 と相補の位置で60度クランプします。",
+  dpwm3: "DPWM3: 山頂の両脇でクランプし、M字型寄りの波形になります。",
+};
+
+function buildModulationHint(referenceMode, samplingMode, clampMode) {
+  const standardName = (
+    referenceMode === "sinusoidal" && samplingMode === "natural" && clampMode === "continuous"
+  )
+    ? "標準組み合わせ: SPWM。"
+    : (
+      referenceMode === "sinusoidal" && samplingMode === "regular" && clampMode === "continuous"
+    )
+      ? "標準組み合わせ: Regular-sampled SPWM。"
+      : (
+        referenceMode === "third_harmonic" && clampMode === "continuous"
+      )
+        ? "標準組み合わせ: THIPWM。"
+        : (
+          referenceMode === "minmax" && clampMode === "continuous"
+        )
+          ? "標準組み合わせ: Continuous SVPWM。"
+          : "詳細組み合わせ: 3軸を独立に指定しています。";
+
+  return `${standardName} ${referenceModeHints[referenceMode]} ${clampModeHints[clampMode]} サンプリング方式は ${samplingMode === "natural" ? "Natural" : "Regular"} です.`;
+}
 
 const controlDefinitions = [
   { key: "V_dc", label: "V_dc", min: 100, max: 600, step: 1, unit: "V" },
@@ -84,10 +113,15 @@ function setStatus(badgeText, message, isError = false) {
   badge.style.color = isError ? "#c14f2c" : "#4e7a76";
 }
 
-function updatePhaseModulationHint() {
-  const mode = document.getElementById("svpwmMode").value;
-  const hint = phaseModulationHints[mode] || phaseModulationHints.three_phase;
-  document.getElementById("phaseModulationHint").textContent = hint;
+function updateModulationHint() {
+  const referenceMode = document.getElementById("referenceMode").value;
+  const samplingMode = document.getElementById("samplingMode").value;
+  const clampMode = document.getElementById("clampMode").value;
+  document.getElementById("modulationHint").textContent = buildModulationHint(
+    referenceMode,
+    samplingMode,
+    clampMode,
+  );
 }
 
 function buildControlRow(definition) {
@@ -152,20 +186,21 @@ function initializeControls() {
     form.appendChild(buildControlRow(definition));
   });
 
-  document.getElementById("pwmMode").value = defaultDisplayValues.pwm_mode;
+  document.getElementById("referenceMode").value = defaultDisplayValues.reference_mode;
+  document.getElementById("samplingMode").value = defaultDisplayValues.sampling_mode;
+  document.getElementById("clampMode").value = defaultDisplayValues.clamp_mode;
   document.getElementById("overmodView").checked = defaultDisplayValues.overmod_view;
-  document.getElementById("svpwmMode").value = defaultDisplayValues.svpwm_mode;
   document.getElementById("fftTarget").value = defaultDisplayValues.fft_target;
   document.getElementById("fftWindow").value = defaultDisplayValues.fft_window;
   document.getElementById("showURef").checked = defaultDisplayValues.show_u_ref;
   document.getElementById("showVRef").checked = defaultDisplayValues.show_v_ref;
   document.getElementById("showWRef").checked = defaultDisplayValues.show_w_ref;
-  updatePhaseModulationHint();
+  updateModulationHint();
 
-  ["pwmMode", "overmodView", "svpwmMode", "fftTarget", "fftWindow"].forEach((id) => {
+  ["referenceMode", "samplingMode", "clampMode", "overmodView", "fftTarget", "fftWindow"].forEach((id) => {
     document.getElementById(id).addEventListener("change", () => {
-      if (id === "svpwmMode") {
-        updatePhaseModulationHint();
+      if (id === "referenceMode" || id === "samplingMode" || id === "clampMode") {
+        updateModulationHint();
       }
       scheduleSimulation();
     });
@@ -180,15 +215,16 @@ function initializeControls() {
 
   document.getElementById("resetButton").addEventListener("click", () => {
     applyDisplayValues(defaultDisplayValues);
-    document.getElementById("pwmMode").value = defaultDisplayValues.pwm_mode;
+    document.getElementById("referenceMode").value = defaultDisplayValues.reference_mode;
+    document.getElementById("samplingMode").value = defaultDisplayValues.sampling_mode;
+    document.getElementById("clampMode").value = defaultDisplayValues.clamp_mode;
     document.getElementById("overmodView").checked = defaultDisplayValues.overmod_view;
-    document.getElementById("svpwmMode").value = defaultDisplayValues.svpwm_mode;
     document.getElementById("fftTarget").value = defaultDisplayValues.fft_target;
     document.getElementById("fftWindow").value = defaultDisplayValues.fft_window;
     document.getElementById("showURef").checked = defaultDisplayValues.show_u_ref;
     document.getElementById("showVRef").checked = defaultDisplayValues.show_v_ref;
     document.getElementById("showWRef").checked = defaultDisplayValues.show_w_ref;
-    updatePhaseModulationHint();
+    updateModulationHint();
     renderScenarioGuide();
     scheduleSimulation();
   });
@@ -220,9 +256,10 @@ function collectPayload() {
     V_on: values.V_on,
     R: values.R,
     L: values.L_mh / 1000.0,
-    pwm_mode: document.getElementById("pwmMode").value,
+    reference_mode: document.getElementById("referenceMode").value,
+    sampling_mode: document.getElementById("samplingMode").value,
+    clamp_mode: document.getElementById("clampMode").value,
     overmod_view: document.getElementById("overmodView").checked,
-    svpwm_mode: document.getElementById("svpwmMode").value,
     fft_target: document.getElementById("fftTarget").value,
     fft_window: document.getElementById("fftWindow").value,
   };
@@ -286,7 +323,7 @@ function renderComparisonPanel() {
   const deltaThdI = currentResponse.metrics.THD_I - baselineResponse.metrics.THD_I;
 
   panel.innerHTML = [
-    ["基準 PWM", baselineResponse.meta.pwm_mode],
+    ["基準方式", baselineResponse.meta.modulation_summary_label],
     ["ΔV1 [V]", `${deltaV1 >= 0 ? "+" : ""}${formatNumber(deltaV1, 1)}`],
     ["ΔI1 [A]", `${deltaI1 >= 0 ? "+" : ""}${formatNumber(deltaI1, 2)}`],
     ["ΔTHD_V [%]", `${deltaThdV >= 0 ? "+" : ""}${formatNumber(deltaThdV, 1)}`],
@@ -330,7 +367,6 @@ function applyScenario(index) {
   if (!scenario) {
     return;
   }
-  const phaseModulationMode = scenario.svpwm_mode === "two_phase" ? "dpwm1" : (scenario.svpwm_mode || "three_phase");
 
   applyDisplayValues({
     V_dc: scenario.sliders.V_dc,
@@ -342,10 +378,11 @@ function applyScenario(index) {
     R: scenario.sliders.R,
     L_mh: scenario.sliders.L,
   });
-  document.getElementById("pwmMode").value = scenario.pwm_mode;
+  document.getElementById("referenceMode").value = scenario.reference_mode;
+  document.getElementById("samplingMode").value = scenario.sampling_mode;
+  document.getElementById("clampMode").value = scenario.clamp_mode;
   document.getElementById("overmodView").checked = Boolean(scenario.overmod_view);
-  document.getElementById("svpwmMode").value = phaseModulationMode;
-  updatePhaseModulationHint();
+  updateModulationHint();
   document.getElementById("fftTarget").value = scenario.fft_target === "current" ? "i_u" : "v_uv";
   document.getElementById("fftWindow").value = scenario.fft_window;
   renderScenarioGuide(index);
@@ -570,7 +607,7 @@ async function exportDashboardPng() {
     context.font = "24px Aptos";
     context.fillText(`timestamp: ${new Date().toLocaleString()}`, 60, 112);
     context.fillText(
-      `PWM=${currentResponse.meta.pwm_mode}, Overmod=${currentResponse.meta.overmod_view ? "on" : "off"}, FFT=${currentResponse.meta.fft_target}`,
+      `Mode=${currentResponse.meta.modulation_summary_label}, Overmod=${currentResponse.meta.overmod_view ? "on" : "off"}, FFT=${currentResponse.meta.fft_target}`,
       60,
       146,
     );
@@ -663,8 +700,8 @@ async function runSimulation() {
     setStatus(
       scenarioFetchFailed ? "API 接続中 / ガイド取得失敗" : "API 接続中",
       scenarioFetchFailed
-        ? `PWM=${data.meta.pwm_mode}, Overmod=${data.meta.overmod_view ? "on" : "off"}, FFT=${data.meta.fft_target}, API=${data.meta.simulation_api_version} / シナリオ取得失敗`
-        : `PWM=${data.meta.pwm_mode}, Overmod=${data.meta.overmod_view ? "on" : "off"}, FFT=${data.meta.fft_target}, API=${data.meta.simulation_api_version}`,
+        ? `Mode=${data.meta.modulation_summary_label}, Overmod=${data.meta.overmod_view ? "on" : "off"}, FFT=${data.meta.fft_target}, API=${data.meta.simulation_api_version} / シナリオ取得失敗`
+        : `Mode=${data.meta.modulation_summary_label}, Overmod=${data.meta.overmod_view ? "on" : "off"}, FFT=${data.meta.fft_target}, API=${data.meta.simulation_api_version}`,
       scenarioFetchFailed,
     );
   } catch (error) {

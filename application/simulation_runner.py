@@ -10,6 +10,14 @@ from collections.abc import Mapping
 
 import numpy as np
 
+from application.modulation_config import (
+    CLAMP_MODE_LABELS,
+    REFERENCE_MODE_LABELS,
+    SAMPLING_MODE_LABELS,
+    build_modulation_summary_label,
+    derive_legacy_pwm_mode,
+    resolve_modulation_axes,
+)
 from simulation.carrier_generator import generate_carrier
 from simulation.fft_analyzer import analyze_spectrum
 from simulation.inverter_voltage import calc_inverter_voltage
@@ -23,21 +31,8 @@ N_DISPLAY_CYCLES = 2
 N_WARMUP_CYCLES_MIN = 5
 NONIDEAL_CORRECTION_STEPS = 2
 WEB_CARRIER_POINT_FACTOR = 4
-SIMULATION_API_VERSION = "phase5-v1"
+SIMULATION_API_VERSION = "phase6-v1"
 
-PWM_MODE_LABELS = {
-    "natural": "Natural Sampling",
-    "regular": "Regular Sampling",
-    "third_harmonic": "Third Harmonic Injection",
-    "svpwm": "Space Vector PWM",
-}
-SVPWM_MODE_LABELS = {
-    "three_phase": "3-Phase Modulation",
-    "dpwm1": "DPWM1",
-    "dpwm2": "DPWM2",
-    "dpwm3": "DPWM3",
-    "two_phase": "DPWM1",
-}
 FFT_TARGET_LABELS = {
     "voltage": "Line Voltage v_uv",
     "current": "Phase Current i_u",
@@ -148,7 +143,8 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
     Args:
         params: SI 単位系のパラメータ辞書。
             V_dc [V], V_ll [V RMS], f [Hz], f_c [Hz], t_d [s], V_on [V],
-            R [Ω], L [H], pwm_mode, fft_target, fft_window を含む。
+            R [Ω], L [H], reference_mode, sampling_mode, clamp_mode,
+            fft_target, fft_window を含む。
 
     Returns:
         描画用途と web API 用途の双方で再利用できる結果辞書。
@@ -161,20 +157,29 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
     V_on = float(params["V_on"])
     R = float(params["R"])
     L = float(params["L"])
-    pwm_mode = str(params["pwm_mode"])
     overmod_view = bool(params.get("overmod_view", False))
-    svpwm_mode = str(params.get("svpwm_mode", "three_phase"))
     fft_target = str(params["fft_target"])
     fft_window = str(params["fft_window"])
+    legacy_pwm_mode = params.get("pwm_mode")
 
     # 後方互換: 旧モード natural_overmod は natural + overmod_view=True として扱う
-    if pwm_mode == "natural_overmod":
-        pwm_mode = "natural"
+    if legacy_pwm_mode == "natural_overmod":
+        legacy_pwm_mode = "natural"
         overmod_view = True
-    if svpwm_mode == "two_phase":
-        svpwm_mode = "dpwm1"
-    if svpwm_mode not in SVPWM_MODE_LABELS:
-        raise ValueError(f"Unsupported svpwm mode: {svpwm_mode}")
+
+    reference_mode, sampling_mode, clamp_mode = resolve_modulation_axes(
+        reference_mode=params.get("reference_mode"),
+        sampling_mode=params.get("sampling_mode"),
+        clamp_mode=params.get("clamp_mode"),
+        pwm_mode=str(legacy_pwm_mode) if legacy_pwm_mode is not None else None,
+        svpwm_mode=str(params.get("svpwm_mode")) if params.get("svpwm_mode") is not None else None,
+    )
+    modulation_summary_label = build_modulation_summary_label(
+        reference_mode,
+        sampling_mode,
+        clamp_mode,
+    )
+    legacy_pwm_mode = derive_legacy_pwm_mode(reference_mode, sampling_mode, clamp_mode)
 
     tau = L / R
     T_cycle = 1.0 / f
@@ -187,13 +192,6 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
     t = np.linspace(0.0, T_sim, n_points)
     dt_actual = t[1] - t[0]
 
-    if pwm_mode == "third_harmonic":
-        reference_mode = "third_harmonic"
-    elif pwm_mode == "svpwm":
-        reference_mode = "svpwm"
-    else:
-        reference_mode = "sinusoidal"
-    sampling_mode = "regular" if pwm_mode == "regular" else "natural"
     limit_linear = not overmod_view
 
     v_u_ref, v_v_ref, v_w_ref = generate_reference(
@@ -201,9 +199,9 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
         f,
         V_dc,
         t,
-        mode=reference_mode,
+        reference_mode=reference_mode,
         limit_linear=limit_linear,
-        svpwm_mode=svpwm_mode,
+        clamp_mode=clamp_mode,
     )
     v_u_mod, v_v_mod, v_w_mod = apply_sampling_mode(
         v_u_ref,
@@ -275,18 +273,21 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
 
     V_ph_peak = V_ll * np.sqrt(2.0) / np.sqrt(3.0)  # [V] V_ll は RMS
     m_a_raw = 2.0 * V_ph_peak / V_dc
-    m_a_limit = THIRD_HARMONIC_LIMIT if pwm_mode in {"third_harmonic", "svpwm"} else 1.0
+    m_a_limit = THIRD_HARMONIC_LIMIT if reference_mode in {"third_harmonic", "minmax"} else 1.0
     m_a = min(m_a_raw, m_a_limit) if limit_linear else m_a_raw
 
     result = {
         "meta": {
             "simulation_api_version": SIMULATION_API_VERSION,
-            "pwm_mode": pwm_mode,
-            "pwm_mode_label": PWM_MODE_LABELS[pwm_mode],
+            "reference_mode": reference_mode,
+            "reference_mode_label": REFERENCE_MODE_LABELS[reference_mode],
             "sampling_mode": sampling_mode,
+            "sampling_mode_label": SAMPLING_MODE_LABELS[sampling_mode],
             "overmod_view": overmod_view,
-            "svpwm_mode": svpwm_mode,
-            "svpwm_mode_label": SVPWM_MODE_LABELS[svpwm_mode],
+            "clamp_mode": clamp_mode,
+            "clamp_mode_label": CLAMP_MODE_LABELS[clamp_mode],
+            "modulation_summary_label": modulation_summary_label,
+            "legacy_pwm_mode": legacy_pwm_mode,
             "fft_target": fft_target,
             "fft_target_label": FFT_TARGET_LABELS[fft_target],
             "fft_window": fft_window,
@@ -354,7 +355,9 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
             "R": R,
             "L": L,
             "overmod_view": overmod_view,
-            "svpwm_mode": svpwm_mode,
+            "reference_mode": reference_mode,
+            "sampling_mode": sampling_mode,
+            "clamp_mode": clamp_mode,
             "dt_actual": dt_actual,
             "m_a": m_a,
             "m_a_raw": m_a_raw,
@@ -389,12 +392,15 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
         "V_ll": V_ll,
         "t_d": t_d,
         "V_on": V_on,
-        "pwm_mode": pwm_mode,
-        "pwm_mode_label": PWM_MODE_LABELS[pwm_mode],
+        "reference_mode": reference_mode,
+        "reference_mode_label": REFERENCE_MODE_LABELS[reference_mode],
         "sampling_mode": sampling_mode,
+        "sampling_mode_label": SAMPLING_MODE_LABELS[sampling_mode],
         "overmod_view": overmod_view,
-        "svpwm_mode": svpwm_mode,
-        "svpwm_mode_label": SVPWM_MODE_LABELS[svpwm_mode],
+        "clamp_mode": clamp_mode,
+        "clamp_mode_label": CLAMP_MODE_LABELS[clamp_mode],
+        "modulation_summary_label": modulation_summary_label,
+        "legacy_pwm_mode": legacy_pwm_mode,
         "fft_target": fft_target,
         "fft_target_label": FFT_TARGET_LABELS[fft_target],
         "fft_window": fft_window,
@@ -447,10 +453,12 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
     response = {
         "meta": {
             "simulation_api_version": meta["simulation_api_version"],
-            "pwm_mode": meta["pwm_mode"],
+            "reference_mode": meta["reference_mode"],
             "sampling_mode": meta["sampling_mode"],
+            "clamp_mode": meta["clamp_mode"],
+            "modulation_summary_label": meta["modulation_summary_label"],
+            "legacy_pwm_mode": meta["legacy_pwm_mode"],
             "overmod_view": bool(meta["overmod_view"]),
-            "svpwm_mode": meta["svpwm_mode"],
             "fft_target": meta["fft_target"],
             "fft_window": meta["fft_window"],
             "points_per_carrier": int(meta["points_per_carrier"]),
@@ -466,8 +474,10 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
             "V_on": float(metrics["V_on"]),
             "R": float(metrics["R"]),
             "L": float(metrics["L"]),
+            "reference_mode": metrics["reference_mode"],
+            "sampling_mode": metrics["sampling_mode"],
+            "clamp_mode": metrics["clamp_mode"],
             "overmod_view": bool(metrics["overmod_view"]),
-            "svpwm_mode": metrics["svpwm_mode"],
         },
         "time": _to_serializable_list(display_time[time_indices]),
         "reference": {

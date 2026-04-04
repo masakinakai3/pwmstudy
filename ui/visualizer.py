@@ -19,6 +19,12 @@ from application import (
     normalize_ui_display_params,
     run_simulation,
 )
+from application.modulation_config import (
+    CLAMP_MODE_LABELS,
+    REFERENCE_MODE_LABELS,
+    SAMPLING_MODE_LABELS,
+    resolve_modulation_axes,
+)
 
 
 # キャリア1周期あたりのサンプル数
@@ -29,18 +35,6 @@ N_DISPLAY_CYCLES = 2
 N_WARMUP_CYCLES_MIN = 5
 # 非理想モデルの電流-電圧整合反復回数
 NONIDEAL_CORRECTION_STEPS = 2
-PWM_MODE_LABELS = {
-    "natural": "Natural Sampling",
-    "regular": "Regular Sampling",
-    "third_harmonic": "Third Harmonic Injection",
-    "svpwm": "Space Vector PWM",
-}
-PHASE_MODULATION_LABELS = {
-    "three_phase": "3-Phase",
-    "dpwm1": "DPWM1",
-    "dpwm2": "DPWM2",
-    "dpwm3": "DPWM3",
-}
 FFT_TARGET_LABELS = {
     "voltage": "Line Voltage v_uv",
     "current": "Phase Current i_u",
@@ -81,14 +75,21 @@ class InverterVisualizer:
                 t_d [s], V_on [V], R [Ω], L [H]
         """
         self._params = dict(default_params)
-        self._pwm_mode = self._params.get("pwm_mode", "natural")
         self._overmod_view = bool(self._params.get("overmod_view", False))
-        self._svpwm_mode = self._params.get("svpwm_mode", "three_phase")
-        if self._svpwm_mode == "two_phase":
-            self._svpwm_mode = "dpwm1"
-        if self._pwm_mode == "natural_overmod":
-            self._pwm_mode = "natural"
+        legacy_pwm_mode = self._params.get("pwm_mode")
+        if legacy_pwm_mode == "natural_overmod":
             self._overmod_view = True
+        (
+            self._reference_mode,
+            self._sampling_mode,
+            self._clamp_mode,
+        ) = resolve_modulation_axes(
+            reference_mode=self._params.get("reference_mode"),
+            sampling_mode=self._params.get("sampling_mode"),
+            clamp_mode=self._params.get("clamp_mode"),
+            pwm_mode=legacy_pwm_mode,
+            svpwm_mode=self._params.get("svpwm_mode"),
+        )
         self._fft_target = self._params.get("fft_target", "voltage")
         self._fft_window = self._params.get("fft_window", "hann")
         plt.rcParams["font.family"] = _select_ui_font_family()
@@ -148,34 +149,71 @@ class InverterVisualizer:
             self._sliders[key] = slider
 
     def _setup_mode_selector(self) -> None:
-        """PWM 方式選択 UI を配置する."""
-        ax = self._fig.add_axes([0.81, 0.06, 0.16, 0.13])
-        ax.set_title("PWM Mode", fontsize=9)
-
-        labels = list(PWM_MODE_LABELS.values())
-        active = list(PWM_MODE_LABELS).index(self._pwm_mode)
-        self._mode_buttons = RadioButtons(ax, labels, active=active)
-        self._mode_label_to_key = {
-            label: key for key, label in PWM_MODE_LABELS.items()
+        """変調3軸選択 UI を配置する."""
+        ax_reference = self._fig.add_axes([0.81, 0.24, 0.16, 0.09])
+        ax_reference.set_title("Reference", fontsize=9)
+        reference_labels = list(REFERENCE_MODE_LABELS.values())
+        reference_active = list(REFERENCE_MODE_LABELS).index(self._reference_mode)
+        self._reference_buttons = RadioButtons(
+            ax_reference,
+            reference_labels,
+            active=reference_active,
+        )
+        self._reference_label_to_key = {
+            label: key for key, label in REFERENCE_MODE_LABELS.items()
         }
-        self._mode_buttons.on_clicked(self._update_mode)
+        self._reference_buttons.on_clicked(self._update_reference_mode)
+        self._set_radio_label_fontsize(self._reference_buttons)
+
+        ax_sampling = self._fig.add_axes([0.81, 0.06, 0.16, 0.05])
+        ax_sampling.set_title("Sampling", fontsize=9)
+        sampling_labels = list(SAMPLING_MODE_LABELS.values())
+        sampling_active = list(SAMPLING_MODE_LABELS).index(self._sampling_mode)
+        self._sampling_buttons = RadioButtons(
+            ax_sampling,
+            sampling_labels,
+            active=sampling_active,
+        )
+        self._sampling_label_to_key = {
+            label: key for key, label in SAMPLING_MODE_LABELS.items()
+        }
+        self._sampling_buttons.on_clicked(self._update_sampling_mode)
+        self._set_radio_label_fontsize(self._sampling_buttons)
 
         ax_overmod = self._fig.add_axes([0.81, 0.02, 0.16, 0.035])
         ax_overmod.set_title("", fontsize=8)
         self._overmod_check = CheckButtons(ax_overmod, ["Overmod View"], [self._overmod_view])
         self._overmod_check.on_clicked(self._update_overmod_view)
 
-        ax_svpwm = self._fig.add_axes([0.81, 0.30, 0.16, 0.10])
-        ax_svpwm.set_title("Phase Modulation", fontsize=9)
-        svpwm_labels = list(PHASE_MODULATION_LABELS.values())
-        svpwm_active = list(PHASE_MODULATION_LABELS).index(self._svpwm_mode)
-        self._svpwm_buttons = RadioButtons(ax_svpwm, svpwm_labels, active=svpwm_active)
-        self._svpwm_label_to_key = {label: key for key, label in PHASE_MODULATION_LABELS.items()}
-        self._svpwm_buttons.on_clicked(self._update_svpwm_mode)
+        ax_clamp = self._fig.add_axes([0.81, 0.12, 0.16, 0.10])
+        ax_clamp.set_title("Clamp", fontsize=9)
+        clamp_labels = list(CLAMP_MODE_LABELS.values())
+        clamp_active = list(CLAMP_MODE_LABELS).index(self._clamp_mode)
+        self._clamp_buttons = RadioButtons(ax_clamp, clamp_labels, active=clamp_active)
+        self._clamp_label_to_key = {
+            label: key for key, label in CLAMP_MODE_LABELS.items()
+        }
+        self._clamp_buttons.on_clicked(self._update_clamp_mode)
+        self._set_radio_label_fontsize(self._clamp_buttons)
 
-    def _update_mode(self, label: str) -> None:
-        """PWM 方式選択のコールバック."""
-        self._pwm_mode = self._mode_label_to_key[label]
+    def _set_radio_label_fontsize(self, widget: RadioButtons, fontsize: int = 8) -> None:
+        """RadioButtons ラベルのフォントサイズを揃える."""
+        for text in widget.labels:
+            text.set_fontsize(fontsize)
+
+    def _update_reference_mode(self, label: str) -> None:
+        """参照生成方式選択のコールバック."""
+        self._reference_mode = self._reference_label_to_key[label]
+        self._update(None)
+
+    def _update_sampling_mode(self, label: str) -> None:
+        """サンプリング方式選択のコールバック."""
+        self._sampling_mode = self._sampling_label_to_key[label]
+        self._update(None)
+
+    def _update_clamp_mode(self, label: str) -> None:
+        """クランプ方式選択のコールバック."""
+        self._clamp_mode = self._clamp_label_to_key[label]
         self._update(None)
 
     def _update_overmod_view(self, label: str) -> None:
@@ -183,14 +221,9 @@ class InverterVisualizer:
         self._overmod_view = bool(self._overmod_check.get_status()[0])
         self._update(None)
 
-    def _update_svpwm_mode(self, label: str) -> None:
-        """SVPWM 変調方式選択のコールバック."""
-        self._svpwm_mode = self._svpwm_label_to_key[label]
-        self._update(None)
-
     def _setup_fft_controls(self) -> None:
         """FFT 表示対象と窓関数の選択 UI を配置する."""
-        ax_target = self._fig.add_axes([0.81, 0.27, 0.16, 0.06])
+        ax_target = self._fig.add_axes([0.64, 0.09, 0.12, 0.06])
         ax_target.set_title("FFT Signal", fontsize=9)
         target_labels = list(FFT_TARGET_LABELS.values())
         target_active = list(FFT_TARGET_LABELS).index(self._fft_target)
@@ -203,8 +236,9 @@ class InverterVisualizer:
             label: key for key, label in FFT_TARGET_LABELS.items()
         }
         self._fft_target_buttons.on_clicked(self._update_fft_target)
+        self._set_radio_label_fontsize(self._fft_target_buttons)
 
-        ax_window = self._fig.add_axes([0.81, 0.20, 0.16, 0.06])
+        ax_window = self._fig.add_axes([0.64, 0.02, 0.12, 0.06])
         ax_window.set_title("FFT Window", fontsize=9)
         window_labels = list(FFT_WINDOW_LABELS.values())
         window_active = list(FFT_WINDOW_LABELS).index(self._fft_window)
@@ -217,6 +251,7 @@ class InverterVisualizer:
             label: key for key, label in FFT_WINDOW_LABELS.items()
         }
         self._fft_window_buttons.on_clicked(self._update_fft_window)
+        self._set_radio_label_fontsize(self._fft_window_buttons)
 
     def _update_fft_target(self, label: str) -> None:
         """FFT 表示対象選択のコールバック."""
@@ -295,19 +330,18 @@ class InverterVisualizer:
         try:
             for key, val in scenario["sliders"].items():
                 self._sliders[key].set_val(val)
-            # set_active は内部で _update_mode/_update_fft_* を呼ぶが
-            # フラグにより _update は実行されず、モード変数のみ更新される
-            mode_idx = list(PWM_MODE_LABELS).index(scenario["pwm_mode"])
-            self._mode_buttons.set_active(mode_idx)
+            # set_active は内部で _update_* を呼ぶが、フラグにより
+            # _update は実行されず、選択状態のみ更新される
+            reference_idx = list(REFERENCE_MODE_LABELS).index(scenario["reference_mode"])
+            self._reference_buttons.set_active(reference_idx)
+            sampling_idx = list(SAMPLING_MODE_LABELS).index(scenario["sampling_mode"])
+            self._sampling_buttons.set_active(sampling_idx)
+            clamp_idx = list(CLAMP_MODE_LABELS).index(scenario["clamp_mode"])
+            self._clamp_buttons.set_active(clamp_idx)
             scenario_overmod = bool(scenario.get("overmod_view", False))
             current_overmod = bool(self._overmod_check.get_status()[0])
             if scenario_overmod != current_overmod:
                 self._overmod_check.set_active(0)
-            scenario_svpwm_mode = str(scenario.get("svpwm_mode", "three_phase"))
-            if scenario_svpwm_mode == "two_phase":
-                scenario_svpwm_mode = "dpwm1"
-            svpwm_idx = list(PHASE_MODULATION_LABELS).index(scenario_svpwm_mode)
-            self._svpwm_buttons.set_active(svpwm_idx)
             fft_target_idx = list(FFT_TARGET_LABELS).index(scenario["fft_target"])
             self._fft_target_buttons.set_active(fft_target_idx)
             fft_window_idx = list(FFT_WINDOW_LABELS).index(scenario["fft_window"])
@@ -481,11 +515,12 @@ class InverterVisualizer:
         """
         return normalize_ui_display_params(
             self._read_display_params(),
-            self._pwm_mode,
-            self._fft_target,
-            self._fft_window,
+            fft_target=self._fft_target,
+            fft_window=self._fft_window,
             overmod_view=self._overmod_view,
-            svpwm_mode=self._svpwm_mode,
+            reference_mode=self._reference_mode,
+            sampling_mode=self._sampling_mode,
+            clamp_mode=self._clamp_mode,
         )
 
     def _run_simulation(
@@ -535,8 +570,7 @@ class InverterVisualizer:
         if not limit_linear and m_a_raw > m_a_limit:
             clamp_str = f" (過変調観察中: 線形上限 {m_a_limit:.3f} を超過)"
         info_lines = [
-            f"方式 = {results['pwm_mode_label']}",
-            f"相数変調 = {results['svpwm_mode_label']}",
+            f"変調構成 = {results['modulation_summary_label']}",
             f"m_a = {m_a:.3f}{clamp_str}    "
             f"m_f = f_c/f = {m_f:.1f}",
             f"t_d = {t_d_us:.2f} us    "
@@ -648,8 +682,8 @@ class InverterVisualizer:
         ax_fft.set_ylabel(f"振幅 [{magnitude_unit}]")
         ax_fft.set_xlabel("周波数 [kHz]")
         ax_fft.set_title(
-            f"{series_title} スペクトル ({results['pwm_mode_label']}, {results['fft_window_label']})",
-            fontsize=9,
+            f"{series_title} スペクトル ({results['modulation_summary_label']}, {results['fft_window_label']})",
+            fontsize=8,
         )
 
         # 基本波とキャリア高調波で色分け

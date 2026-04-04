@@ -10,9 +10,10 @@ def main() -> None:
         "V_ll": 141.0,    # [V]  線間電圧指令RMS値 (peak ≈ 200 V)
         "f":     50.0,    # [Hz] 出力周波数
         "f_c": 5000.0,    # [Hz] キャリア周波数
-        "pwm_mode": "natural",  # PWM 方式
+        "reference_mode": "sinusoidal",  # 参照生成方式
+        "sampling_mode": "natural",  # サンプリング方式
+        "clamp_mode": "continuous",  # クランプ方式
         "overmod_view": False,  # True で線形クランプを無効化
-        "svpwm_mode": "three_phase",  # 相変調方式（three_phase / dpwm1 / dpwm2 / dpwm3）
         "fft_target": "voltage",  # FFT 表示対象
         "fft_window": "hann",  # FFT 窓関数
         "t_d":    0.0,    # [s]  デッドタイム

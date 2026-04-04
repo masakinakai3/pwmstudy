@@ -728,9 +728,11 @@ class TestScenarioPresets:
     def test_all_scenarios_have_required_keys(self) -> None:
         """全シナリオが必須キーを持つことを確認する."""
         from ui.visualizer import (
+            CLAMP_MODE_LABELS,
             FFT_TARGET_LABELS,
             FFT_WINDOW_LABELS,
-            PWM_MODE_LABELS,
+            REFERENCE_MODE_LABELS,
+            SAMPLING_MODE_LABELS,
             SCENARIO_PRESETS,
         )
 
@@ -739,16 +741,23 @@ class TestScenarioPresets:
             assert "label" in scenario, "label キーがない"
             assert "hint" in scenario, "hint キーがない"
             assert "sliders" in scenario, "sliders キーがない"
-            assert "pwm_mode" in scenario, "pwm_mode キーがない"
+            assert "reference_mode" in scenario, "reference_mode キーがない"
+            assert "sampling_mode" in scenario, "sampling_mode キーがない"
+            assert "clamp_mode" in scenario, "clamp_mode キーがない"
             assert "overmod_view" in scenario, "overmod_view キーがない"
-            assert "svpwm_mode" in scenario, "svpwm_mode キーがない"
             assert "fft_target" in scenario, "fft_target キーがない"
             assert "fft_window" in scenario, "fft_window キーがない"
             assert set(scenario["sliders"].keys()) == required_slider_keys, (
                 f"シナリオ '{scenario['label']}' の sliders キーが不正"
             )
-            assert scenario["pwm_mode"] in PWM_MODE_LABELS, (
-                f"シナリオ '{scenario['label']}' の pwm_mode が無効"
+            assert scenario["reference_mode"] in REFERENCE_MODE_LABELS, (
+                f"シナリオ '{scenario['label']}' の reference_mode が無効"
+            )
+            assert scenario["sampling_mode"] in SAMPLING_MODE_LABELS, (
+                f"シナリオ '{scenario['label']}' の sampling_mode が無効"
+            )
+            assert scenario["clamp_mode"] in CLAMP_MODE_LABELS, (
+                f"シナリオ '{scenario['label']}' の clamp_mode が無効"
             )
             assert scenario["fft_target"] in FFT_TARGET_LABELS, (
                 f"シナリオ '{scenario['label']}' の fft_target が無効"
@@ -758,9 +767,6 @@ class TestScenarioPresets:
             )
             assert isinstance(scenario["overmod_view"], bool), (
                 f"シナリオ '{scenario['label']}' の overmod_view が bool でない"
-            )
-            assert scenario["svpwm_mode"] in {"three_phase", "dpwm1", "dpwm2", "dpwm3"}, (
-                f"シナリオ '{scenario['label']}' の svpwm_mode が無効"
             )
 
     def test_scenario_slider_values_in_valid_range(self) -> None:
@@ -807,7 +813,9 @@ class TestSimulationRunnerContract:
             "V_on": 0.0,
             "R": 10.0,
             "L": 0.01,
-            "pwm_mode": "natural",
+            "reference_mode": "sinusoidal",
+            "sampling_mode": "natural",
+            "clamp_mode": "continuous",
             "fft_target": "voltage",
             "fft_window": "hann",
         }
@@ -815,6 +823,9 @@ class TestSimulationRunnerContract:
         results = run_simulation(params)
 
         assert results["meta"]["simulation_api_version"] == SIMULATION_API_VERSION
+        assert results["meta"]["reference_mode"] == "sinusoidal"
+        assert results["meta"]["sampling_mode"] == "natural"
+        assert results["meta"]["clamp_mode"] == "continuous"
         assert set(results.keys()) >= {
             "meta",
             "time",
@@ -857,7 +868,9 @@ class TestSimulationRunnerContract:
             "V_on": 1.0,
             "R": 10.0,
             "L": 0.01,
-            "pwm_mode": "third_harmonic",
+            "reference_mode": "third_harmonic",
+            "sampling_mode": "natural",
+            "clamp_mode": "continuous",
             "fft_target": "current",
             "fft_window": "hann",
         }
@@ -866,7 +879,9 @@ class TestSimulationRunnerContract:
         response = build_web_response(results, max_points=1000)
 
         assert response["meta"]["simulation_api_version"] == SIMULATION_API_VERSION
-        assert response["meta"]["pwm_mode"] == "third_harmonic"
+        assert response["meta"]["reference_mode"] == "third_harmonic"
+        assert response["meta"]["sampling_mode"] == "natural"
+        assert response["meta"]["clamp_mode"] == "continuous"
         assert response["meta"]["fft_target"] == "current"
         assert len(response["time"]) <= 1000
         assert len(response["reference"]["u"]) == len(response["time"])
@@ -891,7 +906,9 @@ class TestSimulationRunnerContract:
             "V_on": 0.0,
             "R": 10.0,
             "L": 0.01,
-            "pwm_mode": "natural",
+            "reference_mode": "sinusoidal",
+            "sampling_mode": "natural",
+            "clamp_mode": "continuous",
             "overmod_view": True,
             "fft_target": "voltage",
             "fft_window": "hann",
@@ -899,14 +916,16 @@ class TestSimulationRunnerContract:
 
         results = run_simulation(params)
 
-        assert results["meta"]["pwm_mode"] == "natural"
+        assert results["meta"]["reference_mode"] == "sinusoidal"
+        assert results["meta"]["sampling_mode"] == "natural"
+        assert results["meta"]["clamp_mode"] == "continuous"
         assert results["meta"]["overmod_view"] is True
         assert results["metrics"]["limit_linear"] is False
         assert results["metrics"]["m_a"] > 1.0
         assert results["metrics"]["m_a"] == results["metrics"]["m_a_raw"]
 
-    def test_svpwm_mode_switch_is_reflected_in_meta(self) -> None:
-        """SVPWM の相変調方式選択が実行結果メタ情報に反映される."""
+    def test_clamp_mode_switch_is_reflected_in_meta(self) -> None:
+        """min-max 参照でのクランプ方式選択が実行結果メタ情報に反映される."""
         params_3p = {
             "V_dc": 300.0,
             "V_ll": 180.0,
@@ -916,30 +935,33 @@ class TestSimulationRunnerContract:
             "V_on": 0.0,
             "R": 10.0,
             "L": 0.01,
-            "pwm_mode": "svpwm",
+            "reference_mode": "minmax",
+            "sampling_mode": "natural",
             "overmod_view": False,
-            "svpwm_mode": "three_phase",
+            "clamp_mode": "continuous",
             "fft_target": "voltage",
             "fft_window": "hann",
         }
         params_2p = dict(params_3p)
-        params_2p["svpwm_mode"] = "dpwm1"
+        params_2p["clamp_mode"] = "dpwm1"
         params_3 = dict(params_3p)
-        params_3["svpwm_mode"] = "dpwm3"
+        params_3["clamp_mode"] = "dpwm3"
 
         result_3p = run_simulation(params_3p)
         result_2p = run_simulation(params_2p)
         result_3 = run_simulation(params_3)
 
-        assert result_3p["meta"]["svpwm_mode"] == "three_phase"
-        assert result_2p["meta"]["svpwm_mode"] == "dpwm1"
-        assert result_3["meta"]["svpwm_mode"] == "dpwm3"
-        assert result_3p["meta"]["pwm_mode"] == "svpwm"
-        assert result_2p["meta"]["pwm_mode"] == "svpwm"
-        assert result_3["meta"]["pwm_mode"] == "svpwm"
+        assert result_3p["meta"]["reference_mode"] == "minmax"
+        assert result_3p["meta"]["sampling_mode"] == "natural"
+        assert result_3p["meta"]["clamp_mode"] == "continuous"
+        assert result_2p["meta"]["clamp_mode"] == "dpwm1"
+        assert result_3["meta"]["clamp_mode"] == "dpwm3"
+        assert result_3p["meta"]["legacy_pwm_mode"] == "svpwm"
+        assert result_2p["meta"]["legacy_pwm_mode"] == "custom"
+        assert result_3["meta"]["legacy_pwm_mode"] == "custom"
 
-    def test_carrier_based_phase_modulation_switch_is_reflected_in_meta(self) -> None:
-        """Natural/Regular でも2相/3相変調選択が実行結果へ反映される."""
+    def test_carrier_based_clamp_mode_switch_is_reflected_in_meta(self) -> None:
+        """キャリア比較PWMでもクランプ方式選択が実行結果へ反映される."""
         base_params = {
             "V_dc": 300.0,
             "V_ll": 170.0,
@@ -949,23 +971,26 @@ class TestSimulationRunnerContract:
             "V_on": 0.0,
             "R": 10.0,
             "L": 0.01,
-            "pwm_mode": "natural",
+            "reference_mode": "sinusoidal",
+            "sampling_mode": "natural",
             "overmod_view": False,
             "fft_target": "voltage",
             "fft_window": "hann",
         }
         params_3p = dict(base_params)
-        params_3p["svpwm_mode"] = "three_phase"
+        params_3p["clamp_mode"] = "continuous"
         params_2p = dict(base_params)
-        params_2p["svpwm_mode"] = "dpwm2"
+        params_2p["clamp_mode"] = "dpwm2"
 
         result_3p = run_simulation(params_3p)
         result_2p = run_simulation(params_2p)
 
-        assert result_3p["meta"]["svpwm_mode"] == "three_phase"
-        assert result_2p["meta"]["svpwm_mode"] == "dpwm2"
-        assert result_3p["meta"]["pwm_mode"] == "natural"
-        assert result_2p["meta"]["pwm_mode"] == "natural"
+        assert result_3p["meta"]["reference_mode"] == "sinusoidal"
+        assert result_3p["meta"]["sampling_mode"] == "natural"
+        assert result_3p["meta"]["clamp_mode"] == "continuous"
+        assert result_2p["meta"]["clamp_mode"] == "dpwm2"
+        assert result_3p["meta"]["legacy_pwm_mode"] == "natural"
+        assert result_2p["meta"]["legacy_pwm_mode"] == "custom"
 
 
 class TestApplicationServices:
@@ -984,11 +1009,12 @@ class TestApplicationServices:
                 "R": 10.0,
                 "L": 10.0,
             },
-            "regular",
-            "current",
-            "hann",
+            fft_target="current",
+            fft_window="hann",
             overmod_view=True,
-            svpwm_mode="dpwm1",
+            reference_mode="sinusoidal",
+            sampling_mode="regular",
+            clamp_mode="dpwm1",
         )
 
         assert params["V_dc"] == 300.0
@@ -996,9 +1022,10 @@ class TestApplicationServices:
         assert params["f_c"] == 5000.0
         assert params["t_d"] == 4.0e-6
         assert params["L"] == 0.01
-        assert params["pwm_mode"] == "regular"
+        assert params["reference_mode"] == "sinusoidal"
+        assert params["sampling_mode"] == "regular"
+        assert params["clamp_mode"] == "dpwm1"
         assert params["overmod_view"] is True
-        assert params["svpwm_mode"] == "dpwm1"
         assert params["fft_target"] == "current"
 
     def test_build_export_payload_uses_structured_results(self) -> None:
@@ -1014,13 +1041,22 @@ class TestApplicationServices:
             "L": 10.0,
         }
         results = run_simulation(
-            normalize_ui_display_params(display_params, "natural", "voltage", "hann")
+            normalize_ui_display_params(
+                display_params,
+                fft_target="voltage",
+                fft_window="hann",
+                reference_mode="sinusoidal",
+                sampling_mode="natural",
+                clamp_mode="continuous",
+            )
         )
 
         payload = build_export_payload(results, display_params)
 
         assert payload["params"]["V_ll_rms_V"] == 141.0
-        assert payload["params"]["pwm_mode"] == "natural"
+        assert payload["params"]["reference_mode"] == "sinusoidal"
+        assert payload["params"]["sampling_mode"] == "natural"
+        assert payload["params"]["clamp_mode"] == "continuous"
         assert payload["metrics"]["m_a"] >= 0.0
         assert payload["metrics"]["THD_V_pct"] >= 0.0
         assert payload["metrics"]["THD_I_pct"] >= 0.0
@@ -1039,9 +1075,11 @@ class TestApplicationServices:
                     "R": 10.0,
                     "L": 10.0,
                 },
-                "third_harmonic",
-                "current",
-                "hann",
+                fft_target="current",
+                fft_window="hann",
+                reference_mode="third_harmonic",
+                sampling_mode="natural",
+                clamp_mode="continuous",
             )
         )
 
@@ -1122,7 +1160,9 @@ class TestWebApi:
             "V_on": 0.0,
             "R": 10.0,
             "L": 0.01,
-            "pwm_mode": "natural",
+            "reference_mode": "sinusoidal",
+            "sampling_mode": "natural",
+            "clamp_mode": "continuous",
             "fft_target": "v_uv",
             "fft_window": "hann",
         }
@@ -1159,7 +1199,9 @@ class TestWebApi:
             "V_on": 0.0,
             "R": 10.0,
             "L": 0.01,
-            "pwm_mode": "natural",
+            "reference_mode": "sinusoidal",
+            "sampling_mode": "natural",
+            "clamp_mode": "continuous",
             "fft_target": "v_uv",
             "fft_window": "hann",
         }
@@ -1180,7 +1222,9 @@ class TestWebApi:
             "V_on": 1.0,
             "R": 10.0,
             "L": 0.01,
-            "pwm_mode": "third_harmonic",
+            "reference_mode": "third_harmonic",
+            "sampling_mode": "natural",
+            "clamp_mode": "continuous",
             "fft_target": "i_u",
             "fft_window": "hann",
         }
@@ -1216,8 +1260,9 @@ class TestWebApi:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["meta"]["pwm_mode"] == "svpwm"
-        assert data["meta"]["svpwm_mode"] == "dpwm3"
+        assert data["meta"]["reference_mode"] == "minmax"
+        assert data["meta"]["sampling_mode"] == "natural"
+        assert data["meta"]["clamp_mode"] == "dpwm3"
         assert data["metrics"]["m_a_limit"] > 1.0
 
     def test_simulate_endpoint_accepts_two_phase_alias(self) -> None:
@@ -1243,7 +1288,7 @@ class TestWebApi:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["meta"]["svpwm_mode"] == "dpwm1"
+        assert data["meta"]["clamp_mode"] == "dpwm1"
 
     def test_simulate_endpoint_accepts_overmod_checkbox(self) -> None:
         """overmod_view=True を受理し、m_a が 1 を超えるケースを返す."""
@@ -1257,7 +1302,9 @@ class TestWebApi:
             "V_on": 0.0,
             "R": 10.0,
             "L": 0.01,
-            "pwm_mode": "natural",
+            "reference_mode": "sinusoidal",
+            "sampling_mode": "natural",
+            "clamp_mode": "continuous",
             "overmod_view": True,
             "fft_target": "v_uv",
             "fft_window": "hann",
@@ -1267,6 +1314,8 @@ class TestWebApi:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["meta"]["pwm_mode"] == "natural"
+        assert data["meta"]["reference_mode"] == "sinusoidal"
+        assert data["meta"]["sampling_mode"] == "natural"
+        assert data["meta"]["clamp_mode"] == "continuous"
         assert data["meta"]["overmod_view"] is True
         assert data["metrics"]["m_a"] > 1.0
