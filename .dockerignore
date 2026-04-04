@@ -1,0 +1,36 @@
+# バージョン管理対象外のファイル群
+.git/
+.github/
+.pytest_cache/
+
+# デスクトップ UI（Docker では不要）
+ui/
+main.py
+
+# テスト・ドキュメント（コンテナ実行に不要）
+tests/
+docs/
+*.md
+
+# Python バイトコード
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# エクスポート出力ファイル
+pwm_export_*.json
+pwm_export_*.png
+
+# 依存定義（フル版は不要、requirements-web.txt のみ使用）
+requirements.txt
+
+# IDE / エディタ設定
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS 生成ファイル
+.DS_Store
+Thumbs.db

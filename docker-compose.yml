@@ -1,0 +1,18 @@
+services:
+  simulator:
+    build: .
+    image: 3lvlpwm-simulator:latest
+    container_name: 3lvlpwm
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    # unless-stopped: ホスト再起動時にコンテナも自動起動する。
+    # 常起動が不要な場合は `restart: no` に変更すること。
+    # ヘルスチェック: 起動後 10 秒待機、5 秒ごとに /health を確認
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s

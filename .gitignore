@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+
+# pytest
+.pytest_cache/
+*.pytest_cache
+
+# 仮想環境
+.venv/
+venv/
+env/
+
+# エクスポート出力ファイル
+pwm_export_*.json
+pwm_export_*.png
+
+# IDE / エディタ
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker ビルドキャッシュ
+.docker/

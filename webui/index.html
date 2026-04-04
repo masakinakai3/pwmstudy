@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>三相PWMインバータ Web Simulator</title>
+  <link rel="preconnect" href="https://cdn.plot.ly">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero-panel">
+      <div>
+        <p class="eyebrow">Three-Phase PWM Inverter</p>
+        <h1>Web Learning Simulator</h1>
+        <p class="hero-copy">
+          主要 8 パラメータと PWM 方式をブラウザから操作し、
+          変調波形、電圧、電流、FFT に加えて理論比較と条件比較を同一画面で確認します。
+        </p>
+      </div>
+      <div class="status-panel">
+        <div class="status-badge" id="apiStatus">API 接続待機</div>
+        <p id="statusMessage">初期条件でシミュレーションを実行します。</p>
+      </div>
+    </header>
+
+    <main class="workspace-grid">
+      <aside class="control-panel">
+        <div class="panel-heading">
+          <p class="eyebrow">Controls</p>
+          <h2>Parameter Deck</h2>
+        </div>
+        <form id="controlForm" class="control-form"></form>
+
+        <section class="mode-panel">
+          <label>
+            <span>PWM 方式</span>
+            <select id="pwmMode">
+              <option value="natural">Natural Sampling</option>
+              <option value="regular">Regular Sampling</option>
+              <option value="third_harmonic">Third Harmonic Injection</option>
+            </select>
+          </label>
+          <label>
+            <span>FFT 表示対象</span>
+            <select id="fftTarget">
+              <option value="v_uv">線間電圧 v_uv</option>
+              <option value="i_u">相電流 i_u</option>
+            </select>
+          </label>
+          <label>
+            <span>FFT 窓関数</span>
+            <select id="fftWindow">
+              <option value="hann">Hann</option>
+              <option value="rectangular">Rectangular</option>
+            </select>
+          </label>
+          <button type="button" id="resetButton" class="reset-button">初期値に戻す</button>
+        </section>
+
+        <section class="scenario-panel">
+          <div class="panel-heading compact">
+            <p class="eyebrow">Guide</p>
+            <h2>Scenario Guide</h2>
+          </div>
+          <div id="scenarioButtons" class="scenario-grid"></div>
+          <article class="guide-card">
+            <h3 id="scenarioTitle">学習シナリオを選択</h3>
+            <p id="scenarioFocus">目的に応じた条件を即座に呼び出せます。</p>
+            <p id="scenarioHint">ヒントはここに表示されます。</p>
+          </article>
+        </section>
+
+        <section class="action-panel">
+          <div class="panel-heading compact">
+            <p class="eyebrow">Compare & Export</p>
+            <h2>Actions</h2>
+          </div>
+          <div class="action-grid">
+            <button type="button" id="baselineSetButton" class="action-button">ベースライン設定</button>
+            <button type="button" id="baselineClearButton" class="action-button secondary">ベースライン解除</button>
+            <button type="button" id="exportJsonButton" class="action-button">JSON保存</button>
+            <button type="button" id="exportPngButton" class="action-button secondary">PNG保存</button>
+          </div>
+        </section>
+      </aside>
+
+      <section class="dashboard-panel">
+        <div class="metric-grid" id="metricGrid"></div>
+
+        <div class="insight-grid">
+          <article class="insight-card theory-panel">
+            <div class="panel-heading compact">
+              <p class="eyebrow">Theory</p>
+              <h2>理論比較</h2>
+            </div>
+            <div id="theoryPanel" class="theory-stack"></div>
+          </article>
+          <article class="insight-card comparison-panel">
+            <div class="panel-heading compact">
+              <p class="eyebrow">Compare</p>
+              <h2>条件比較</h2>
+            </div>
+            <div id="comparisonPanel" class="comparison-stack"></div>
+          </article>
+        </div>
+
+        <section class="plot-section">
+          <div class="section-header">
+            <p class="eyebrow">Section 1</p>
+            <h2>変調信号 + キャリア</h2>
+          </div>
+          <div class="plot-card full-width">
+            <div id="referencePlot" class="plot-surface"></div>
+          </div>
+        </section>
+
+        <section class="plot-section">
+          <div class="section-header">
+            <p class="eyebrow">Section 2</p>
+            <h2>線間電圧 / 相電圧</h2>
+          </div>
+          <div class="plot-grid two-up">
+            <div class="plot-card">
+              <div id="lineVoltagePlot" class="plot-surface"></div>
+            </div>
+            <div class="plot-card">
+              <div id="phaseVoltagePlot" class="plot-surface"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="plot-section">
+          <div class="section-header">
+            <p class="eyebrow">Section 3</p>
+            <h2>相電流 / FFT</h2>
+          </div>
+          <div class="plot-grid two-up">
+            <div class="plot-card">
+              <div id="currentPlot" class="plot-surface"></div>
+            </div>
+            <div class="plot-card">
+              <div id="fftPlot" class="plot-surface"></div>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

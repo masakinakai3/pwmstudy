@@ -12,12 +12,13 @@ import matplotlib.pyplot as plt
 from matplotlib import font_manager
 from matplotlib.widgets import Button, RadioButtons, Slider
 
-from simulation.reference_generator import THIRD_HARMONIC_LIMIT, generate_reference
-from simulation.carrier_generator import generate_carrier
-from simulation.pwm_comparator import apply_deadtime, apply_sampling_mode, compare_pwm
-from simulation.inverter_voltage import calc_inverter_voltage
-from simulation.rl_load_solver import solve_rl_load
-from simulation.fft_analyzer import analyze_spectrum
+from application import (
+    SCENARIO_PRESETS,
+    build_baseline_snapshot,
+    build_export_payload,
+    normalize_ui_display_params,
+    run_simulation,
+)
 
 
 # キャリア1周期あたりのサンプル数
@@ -41,66 +42,6 @@ FFT_WINDOW_LABELS = {
     "hann": "Hann",
     "rectangular": "Rectangular",
 }
-
-# 学習シナリオプリセット（IMPROVE-11）
-# スライダー値はUIの表示単位: f_c [kHz], t_d [us], L [mH], その他はSI単位
-SCENARIO_PRESETS = [
-    {
-        "label": "①線形変調限界",
-        "hint": "V_LLスライダーを180V付近まで上げると m_a→1 に近づく。184V超でクランプ表示に切替",
-        "sliders": {
-            "V_dc": 300.0, "V_ll": 141.0, "f": 50.0, "f_c": 5.0,
-            "t_d": 0.0, "V_on": 0.0, "R": 10.0, "L": 10.0,
-        },
-        "pwm_mode": "natural",
-        "fft_target": "voltage",
-        "fft_window": "hann",
-    },
-    {
-        "label": "②キャリア周波数",
-        "hint": "f_cを1kHzから増やすとFFTのキャリア高調波ピークが高周波側へ移動し電流リプルが減少する",
-        "sliders": {
-            "V_dc": 300.0, "V_ll": 141.0, "f": 50.0, "f_c": 1.0,
-            "t_d": 0.0, "V_on": 0.0, "R": 10.0, "L": 10.0,
-        },
-        "pwm_mode": "natural",
-        "fft_target": "voltage",
-        "fft_window": "hann",
-    },
-    {
-        "label": "③L平滑効果",
-        "hint": "L=0.1mHで電流リプル大。Lスライダーを50mHまで増やすと電流が正弦波に近づく",
-        "sliders": {
-            "V_dc": 300.0, "V_ll": 141.0, "f": 50.0, "f_c": 5.0,
-            "t_d": 0.0, "V_on": 0.0, "R": 10.0, "L": 0.1,
-        },
-        "pwm_mode": "natural",
-        "fft_target": "current",
-        "fft_window": "hann",
-    },
-    {
-        "label": "④位相遅れ",
-        "hint": "L=50mH, R=5ΩのときPF1が小さく電流が電圧から大きく遅れる。cos(phi)とPF1を比較",
-        "sliders": {
-            "V_dc": 300.0, "V_ll": 141.0, "f": 50.0, "f_c": 5.0,
-            "t_d": 0.0, "V_on": 0.0, "R": 5.0, "L": 50.0,
-        },
-        "pwm_mode": "natural",
-        "fft_target": "current",
-        "fft_window": "hann",
-    },
-    {
-        "label": "⑤過変調",
-        "hint": "V_LL=220Vはm_a>1の過変調。赤字クランプ表示。3rd Harmonic Injectionに切替えると線形範囲が拡張",
-        "sliders": {
-            "V_dc": 300.0, "V_ll": 220.0, "f": 50.0, "f_c": 5.0,
-            "t_d": 0.0, "V_on": 0.0, "R": 10.0, "L": 10.0,
-        },
-        "pwm_mode": "natural",
-        "fft_target": "voltage",
-        "fft_window": "hann",
-    },
-]
 
 
 def _select_ui_font_family() -> str:
@@ -338,42 +279,8 @@ class InverterVisualizer:
         """
         if not self._last_results:
             return
-        r = self._last_results
-        V_ph = r["V_ll"] / np.sqrt(3)
-        m_a_raw = 2.0 * V_ph / r["V_dc"]
-        m_a = min(m_a_raw, r["m_a_limit"])
-        # タイムスタンプを1回だけ生成してファイル名と JSON 内容で共有する
         now = datetime.now()
-        data = {
-            "timestamp": now.isoformat(timespec="seconds"),
-            "params": {
-                "V_dc_V": float(self._sliders["V_dc"].val),
-                "V_ll_rms_V": float(self._sliders["V_ll"].val),
-                "f_Hz": float(self._sliders["f"].val),
-                "f_c_kHz": float(self._sliders["f_c"].val),
-                "t_d_us": float(self._sliders["t_d"].val),
-                "V_on_V": float(self._sliders["V_on"].val),
-                "R_ohm": float(self._sliders["R"].val),
-                "L_mH": float(self._sliders["L"].val),
-                "pwm_mode": r["pwm_mode"],
-                "fft_target": r["fft_target"],
-                "fft_window": r["fft_window"],
-            },
-            "metrics": {
-                "m_a": round(float(m_a), 4),
-                "m_f": round(float(r["m_f"]), 1),
-                "V1_pk_V": round(float(r["fft_vuv"]["fundamental_mag"]), 3),
-                "THD_V_pct": round(float(r["fft_vuv"]["thd"]), 2),
-                "V_rms_V": round(float(r["fft_vuv"]["rms_total"]), 3),
-                "I1_theory_pk_A": round(float(r["I_theory"]), 4),
-                "I1_fft_pk_A": round(float(r["I_measured"]), 4),
-                "THD_I_pct": round(float(r["fft_iu"]["thd"]), 2),
-                "I_rms_A": round(float(r["fft_iu"]["rms_total"]), 4),
-                "PF1_fft": round(float(r["pf1_fft"]), 4),
-                "phi_deg": round(float(np.degrees(r["phi"])), 2),
-                "Z_ohm": round(float(r["Z"]), 4),
-            },
-        }
+        data = build_export_payload(self._last_results, self._read_display_params(), now)
         fname = f"pwm_export_{now.strftime('%Y%m%d_%H%M%S')}.json"
         fpath = os.path.join(os.getcwd(), fname)
         with open(fpath, "w", encoding="utf-8") as f_out:
@@ -407,21 +314,11 @@ class InverterVisualizer:
         # 線間電圧基本波と相電流をベースラインとしてオーバーレイ
         self._lines["v_uv_baseline"].set_data(t_ms, r["v_uv_fund"])
         self._lines["i_u_baseline"].set_data(t_ms, r["i_u"])
-        # ベースライン指標を記録
-        V_ph = r["V_ll"] / np.sqrt(3)
-        m_a_raw = 2.0 * V_ph / r["V_dc"]
-        m_a = min(m_a_raw, r["m_a_limit"])
-        self._baseline_results = {
-            "m_a": float(m_a),
-            "V1": float(r["fft_vuv"]["fundamental_mag"]),
-            "THD_V": float(r["fft_vuv"]["thd"]),
-            "I_measured": float(r["I_measured"]),
-            "THD_I": float(r["fft_iu"]["thd"]),
-        }
+        self._baseline_results = build_baseline_snapshot(r)
         hint = (
-            f"ベースライン設定済み: m_a={m_a:.3f}, "
-            f"V1={r['fft_vuv']['fundamental_mag']:.1f}V, "
-            f"THD_V={r['fft_vuv']['thd']:.1f}%"
+            f"ベースライン設定済み: m_a={self._baseline_results['m_a']:.3f}, "
+            f"V1={self._baseline_results['V1']:.1f}V, "
+            f"THD_V={self._baseline_results['THD_V']:.1f}%"
         )
         self._hint_text.set_text(hint)
         self._fig.canvas.draw_idle()
@@ -517,105 +414,36 @@ class InverterVisualizer:
             fontsize=9, verticalalignment="top", horizontalalignment="right",
         )
 
+    def _read_display_params(self) -> dict[str, float]:
+        """スライダーから現在の表示単位パラメータを読み取る."""
+        return {
+            "V_dc": float(self._sliders["V_dc"].val),
+            "V_ll": float(self._sliders["V_ll"].val),
+            "f": float(self._sliders["f"].val),
+            "f_c": float(self._sliders["f_c"].val),
+            "t_d": float(self._sliders["t_d"].val),
+            "V_on": float(self._sliders["V_on"].val),
+            "R": float(self._sliders["R"].val),
+            "L": float(self._sliders["L"].val),
+        }
+
     def _read_params(self) -> dict:
         """スライダーから現在のパラメータ値を読み取る.
 
         Returns:
             パラメータ辞書（SI単位系）
         """
-        return {
-            "V_dc": self._sliders["V_dc"].val,           # [V]
-            "V_ll": self._sliders["V_ll"].val * np.sqrt(2),  # [V] RMS→peak
-            "f":    self._sliders["f"].val,                # [Hz]
-            "f_c":  self._sliders["f_c"].val * 1000.0,    # [Hz] (kHz→Hz)
-            "t_d":  self._sliders["t_d"].val * 1.0e-6,    # [s] (us→s)
-            "V_on": self._sliders["V_on"].val,            # [V]
-            "R":    self._sliders["R"].val,                # [Ω]
-            "L":    self._sliders["L"].val / 1000.0,       # [H]  (mH→H)
-            "pwm_mode": self._pwm_mode,
-            "fft_target": self._fft_target,
-            "fft_window": self._fft_window,
-        }
-
-    def _solve_nonideal_power_stage(
-        self,
-        leg_u: np.ndarray,
-        leg_v: np.ndarray,
-        leg_w: np.ndarray,
-        V_dc: float,
-        R: float,
-        L: float,
-        dt: float,
-        V_on: float,
-        v_uN_ideal: np.ndarray,
-        v_vN_ideal: np.ndarray,
-        v_wN_ideal: np.ndarray,
-    ) -> tuple[
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-    ]:
-        """非理想インバータと RL 負荷を反復的に整合させる.
-
-        デッドタイム中の極電圧は電流方向で決まるため、まず理想相電圧から
-        電流を初期推定し、その後に電圧-電流の整合を固定回数で更新する。
-
-        Args:
-            leg_u: U相レグ状態 {-1, 0, +1}
-            leg_v: V相レグ状態 {-1, 0, +1}
-            leg_w: W相レグ状態 {-1, 0, +1}
-            V_dc: 直流母線電圧 [V]
-            R: 負荷抵抗 [Ω]
-            L: 負荷インダクタンス [H]
-            dt: 時間刻み [s]
-            V_on: 導通経路の固定電圧降下 [V]
-            v_uN_ideal: 理想U相電圧 [V]
-            v_vN_ideal: 理想V相電圧 [V]
-            v_wN_ideal: 理想W相電圧 [V]
-
-        Returns:
-            (v_uv, v_vw, v_wu, v_uN, v_vN, v_wN, i_u, i_v, i_w)
-        """
-        i_u, i_v, i_w = solve_rl_load(v_uN_ideal, v_vN_ideal, v_wN_ideal, R, L, dt)
-
-        for _ in range(NONIDEAL_CORRECTION_STEPS):
-            v_uv, v_vw, v_wu, v_uN, v_vN, v_wN = calc_inverter_voltage(
-                leg_u,
-                leg_v,
-                leg_w,
-                V_dc,
-                i_u=i_u,
-                i_v=i_v,
-                i_w=i_w,
-                V_on=V_on,
-                inputs_are_leg_states=True,
-            )
-            i_u, i_v, i_w = solve_rl_load(v_uN, v_vN, v_wN, R, L, dt)
-
-        v_uv, v_vw, v_wu, v_uN, v_vN, v_wN = calc_inverter_voltage(
-            leg_u,
-            leg_v,
-            leg_w,
-            V_dc,
-            i_u=i_u,
-            i_v=i_v,
-            i_w=i_w,
-            V_on=V_on,
-            inputs_are_leg_states=True,
+        return normalize_ui_display_params(
+            self._read_display_params(),
+            self._pwm_mode,
+            self._fft_target,
+            self._fft_window,
         )
-
-        return v_uv, v_vw, v_wu, v_uN, v_vN, v_wN, i_u, i_v, i_w
 
     def _run_simulation(
         self, params: dict
     ) -> dict[str, object]:
-        """シミュレーションを実行する.
+        """application 層の simulation runner を呼び出す.
 
         Args:
             params: パラメータ辞書（SI単位系）
@@ -623,180 +451,7 @@ class InverterVisualizer:
         Returns:
             シミュレーション結果辞書
         """
-        V_dc = params["V_dc"]  # [V]
-        V_ll = params["V_ll"]  # [V]
-        f = params["f"]        # [Hz]
-        f_c = params["f_c"]    # [Hz]
-        t_d = params["t_d"]    # [s]
-        V_on = params["V_on"]  # [V]
-        R = params["R"]        # [Ω]
-        L = params["L"]        # [H]
-        pwm_mode = params["pwm_mode"]
-        fft_target = params["fft_target"]
-        fft_window = params["fft_window"]
-
-        # 助走周期数の動的計算（5τ以上を確保）
-        tau = L / R  # [s] RL時定数
-        T_cycle = 1.0 / f  # [s] 1周期
-        n_warmup = max(N_WARMUP_CYCLES_MIN, int(np.ceil(5.0 * tau / T_cycle)))
-
-        # 時間配列の生成（助走 + 表示区間）
-        N_total = n_warmup + N_DISPLAY_CYCLES
-        T_sim = N_total / f  # [s] 合計シミュレーション時間
-        dt = 1.0 / (f_c * POINTS_PER_CARRIER)  # [s] 基準時間刻み
-        n_points = int(round(T_sim / dt)) + 1
-        t = np.linspace(0, T_sim, n_points)  # [s]
-        dt_actual = t[1] - t[0]  # [s] 実際の時間刻み
-
-        # シミュレーション実行
-        reference_mode = "third_harmonic" if pwm_mode == "third_harmonic" else "sinusoidal"
-        sampling_mode = "regular" if pwm_mode == "regular" else "natural"
-
-        v_u_ref, v_v_ref, v_w_ref = generate_reference(
-            V_ll,
-            f,
-            V_dc,
-            t,
-            mode=reference_mode,
-        )
-        v_u, v_v, v_w = apply_sampling_mode(
-            v_u_ref,
-            v_v_ref,
-            v_w_ref,
-            t,
-            f_c,
-            sampling_mode=sampling_mode,
-        )
-        v_carrier = generate_carrier(f_c, t)
-        S_u, S_v, S_w = compare_pwm(v_u, v_v, v_w, v_carrier)
-        leg_u, leg_v, leg_w = apply_deadtime(S_u, S_v, S_w, t_d, dt_actual)
-
-        _, _, _, v_uN_ideal, v_vN_ideal, v_wN_ideal = calc_inverter_voltage(
-            S_u, S_v, S_w, V_dc
-        )
-
-        if t_d > 0.0 or V_on > 0.0:
-            v_uv, v_vw, v_wu, v_uN, v_vN, v_wN, i_u, i_v, i_w = (
-                self._solve_nonideal_power_stage(
-                    leg_u,
-                    leg_v,
-                    leg_w,
-                    V_dc,
-                    R,
-                    L,
-                    dt_actual,
-                    V_on,
-                    v_uN_ideal,
-                    v_vN_ideal,
-                    v_wN_ideal,
-                )
-            )
-        else:
-            v_uv, v_vw, v_wu, v_uN, v_vN, v_wN = calc_inverter_voltage(
-                S_u, S_v, S_w, V_dc
-            )
-            i_u, i_v, i_w = solve_rl_load(v_uN, v_vN, v_wN, R, L, dt_actual)
-
-        S_u_plot = (leg_u == 1).astype(np.int32)
-        S_v_plot = (leg_v == 1).astype(np.int32)
-        S_w_plot = (leg_w == 1).astype(np.int32)
-
-        # 表示区間の抽出（最後の N_DISPLAY_CYCLES 周期のみ）
-        T_display = N_DISPLAY_CYCLES / f  # [s]
-        n_display = int(round(T_display / dt_actual)) + 1
-        sl = slice(-n_display, None)
-        fft_slice = slice(-n_display, -1) if n_display > 1 else sl
-
-        t_disp = t[sl] - t[-n_display]  # [s] 0起点にオフセット
-        t_fft = t[fft_slice] - t[-n_display]  # [s] FFT 用（終端重複点を除く）
-
-        # FFT解析（定常状態スペクトル）
-        fft_vuv = analyze_spectrum(
-            v_uv[fft_slice],
-            dt_actual,
-            f,
-            window_mode=fft_window,
-        )
-        fft_vuN = analyze_spectrum(
-            v_uN[fft_slice],
-            dt_actual,
-            f,
-            window_mode=fft_window,
-        )
-        fft_iu = analyze_spectrum(
-            i_u[fft_slice],
-            dt_actual,
-            f,
-            window_mode=fft_window,
-        )
-
-        # 基本波オーバーレイの再構成
-        omega_voltage = 2.0 * np.pi * fft_vuN["fundamental_freq"]  # [rad/s]
-
-        # 線間電圧 v_uv の基本波
-        v_uv_fund = fft_vuv["fundamental_mag"] * np.cos(
-            2.0 * np.pi * fft_vuv["fundamental_freq"] * t_disp
-            + fft_vuv["fundamental_phase"]
-        )
-
-        # 相電圧 v_uN の基本波
-        v_uN_fund = fft_vuN["fundamental_mag"] * np.cos(
-            omega_voltage * t_disp + fft_vuN["fundamental_phase"]
-        )
-
-        # 理論値計算
-        Z = np.sqrt(R**2 + (omega_voltage * L)**2)  # [Ω] インピーダンス
-        phi = np.arctan2(omega_voltage * L, R)      # [rad] 位相角
-        V_uN_fund_mag = fft_vuN["fundamental_mag"]  # [V] 基本波相電圧振幅
-        I_theory_peak = V_uN_fund_mag / Z         # [A] 理論電流振幅
-
-        # 理論電流波形（基本波相電圧を Z で除して φ だけ遅延）
-        i_u_theory = I_theory_peak * np.cos(
-            omega_voltage * t_disp + fft_vuN["fundamental_phase"] - phi
-        )
-
-        # 実測電流基本波振幅（理論値と同じ物理量で比較する）
-        I_measured = fft_iu["fundamental_mag"]  # [A]
-        phase_diff = fft_vuN["fundamental_phase"] - fft_iu["fundamental_phase"]
-        phase_diff = np.arctan2(np.sin(phase_diff), np.cos(phase_diff))
-        pf1_fft = np.cos(phase_diff)
-
-        return {
-            "t": t_disp,
-            "t_fft": t_fft,
-            "v_u": v_u[sl], "v_v": v_v[sl], "v_w": v_w[sl],
-            "v_carrier": v_carrier[sl],
-            "S_u": S_u_plot[sl], "S_v": S_v_plot[sl], "S_w": S_w_plot[sl],
-            "v_uv": v_uv[sl], "v_vw": v_vw[sl], "v_wu": v_wu[sl],
-            "v_uN": v_uN[sl],
-            "i_u": i_u[sl], "i_v": i_v[sl], "i_w": i_w[sl],
-            "V_dc": V_dc,
-            "V_ll": V_ll,
-            "t_d": t_d,
-            "V_on": V_on,
-            "pwm_mode": pwm_mode,
-            "pwm_mode_label": PWM_MODE_LABELS[pwm_mode],
-            "sampling_mode": sampling_mode,
-            "fft_target": fft_target,
-            "fft_target_label": FFT_TARGET_LABELS[fft_target],
-            "fft_window": fft_window,
-            "fft_window_label": FFT_WINDOW_LABELS[fft_window],
-            "m_a_limit": THIRD_HARMONIC_LIMIT if pwm_mode == "third_harmonic" else 1.0,
-            "fft_vuv": fft_vuv,
-            "fft_vuN": fft_vuN,
-            "fft_iu": fft_iu,
-            "f": f,
-            "f_c": f_c,
-            "v_uv_fund": v_uv_fund,
-            "v_uN_fund": v_uN_fund,
-            "i_u_theory": i_u_theory,
-            "Z": Z,
-            "phi": phi,
-            "m_f": f_c / f,
-            "I_theory": I_theory_peak,
-            "I_measured": I_measured,
-            "pf1_fft": pf1_fft,
-        }
+        return run_simulation(params)
 
     def _draw_waveforms(self, results: dict) -> None:
         """波形データをプロットに反映する.

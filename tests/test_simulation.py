@@ -2,7 +2,18 @@
 
 import numpy as np
 import pytest
+from fastapi.testclient import TestClient
 
+from application import (
+    SCENARIO_PRESETS,
+    SIMULATION_API_VERSION,
+    build_baseline_snapshot,
+    build_export_payload,
+    build_web_response,
+    normalize_ui_display_params,
+    run_simulation,
+)
+from webapi.app import app
 from simulation.reference_generator import THIRD_HARMONIC_LIMIT, generate_reference
 from simulation.carrier_generator import generate_carrier
 from simulation.pwm_comparator import apply_deadtime, apply_sampling_mode, compare_pwm
@@ -608,3 +619,304 @@ class TestScenarioPresets:
         from ui.visualizer import SCENARIO_PRESETS
 
         assert len(SCENARIO_PRESETS) == 5
+
+
+class TestSimulationRunnerContract:
+    """web 移行 Phase 0 のシミュレーション契約テスト."""
+
+    def test_run_simulation_returns_structured_sections(self) -> None:
+        """runner が UI 非依存の構造化結果辞書を返す."""
+        params = {
+            "V_dc": 300.0,
+            "V_ll": 141.0 * np.sqrt(2.0),
+            "f": 50.0,
+            "f_c": 5000.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 0.01,
+            "pwm_mode": "natural",
+            "fft_target": "voltage",
+            "fft_window": "hann",
+        }
+
+        results = run_simulation(params)
+
+        assert results["meta"]["simulation_api_version"] == SIMULATION_API_VERSION
+        assert set(results.keys()) >= {
+            "meta",
+            "time",
+            "reference",
+            "modulation",
+            "carrier",
+            "switching",
+            "leg_states",
+            "voltages",
+            "currents",
+            "spectra",
+            "metrics",
+        }
+        assert set(results["voltages"].keys()) >= {
+            "v_uv",
+            "v_vw",
+            "v_wu",
+            "v_uN",
+            "v_vN",
+            "v_wN",
+        }
+        assert set(results["currents"].keys()) >= {"i_u", "i_v", "i_w", "i_u_theory"}
+
+        n_display = len(results["time"]["display_s"])
+        assert n_display > 100
+        assert len(results["reference"]["u"]) == n_display
+        assert len(results["modulation"]["u"]) == n_display
+        assert len(results["carrier"]["waveform"]) == n_display
+        assert len(results["voltages"]["v_wN"]) == n_display
+        assert len(results["currents"]["i_w"]) == n_display
+
+    def test_build_web_response_limits_points_and_keeps_metrics(self) -> None:
+        """web 応答が最大点数制限と主要メトリクスを満たす."""
+        params = {
+            "V_dc": 300.0,
+            "V_ll": 220.0,
+            "f": 50.0,
+            "f_c": 5000.0,
+            "t_d": 4.0e-6,
+            "V_on": 1.0,
+            "R": 10.0,
+            "L": 0.01,
+            "pwm_mode": "third_harmonic",
+            "fft_target": "current",
+            "fft_window": "hann",
+        }
+
+        results = run_simulation(params)
+        response = build_web_response(results, max_points=1000)
+
+        assert response["meta"]["simulation_api_version"] == SIMULATION_API_VERSION
+        assert response["meta"]["pwm_mode"] == "third_harmonic"
+        assert response["meta"]["fft_target"] == "current"
+        assert len(response["time"]) <= 1000
+        assert len(response["reference"]["u"]) == len(response["time"])
+        assert len(response["voltages"]["v_uv"]) == len(response["time"])
+        assert len(response["currents"]["i_u_theory"]) == len(response["time"])
+        assert len(response["fft"]["v_uv"]["freq"]) <= 1000
+        assert response["metrics"]["THD_V"] >= 0.0
+        assert response["metrics"]["THD_I"] >= 0.0
+        assert response["metrics"]["m_a_limit"] > 1.0
+
+
+class TestApplicationServices:
+    """web 移行 Phase 1 の application サービス層テスト."""
+
+    def test_normalize_ui_display_params_converts_display_units(self) -> None:
+        """UI 表示単位が SI 単位へ正しく変換される."""
+        params = normalize_ui_display_params(
+            {
+                "V_dc": 300.0,
+                "V_ll": 141.0,
+                "f": 50.0,
+                "f_c": 5.0,
+                "t_d": 4.0,
+                "V_on": 1.0,
+                "R": 10.0,
+                "L": 10.0,
+            },
+            "regular",
+            "current",
+            "hann",
+        )
+
+        assert params["V_dc"] == 300.0
+        assert abs(params["V_ll"] - 141.0 * np.sqrt(2.0)) < 1.0e-10
+        assert params["f_c"] == 5000.0
+        assert params["t_d"] == 4.0e-6
+        assert params["L"] == 0.01
+        assert params["pwm_mode"] == "regular"
+        assert params["fft_target"] == "current"
+
+    def test_build_export_payload_uses_structured_results(self) -> None:
+        """JSON 保存 payload が application 層だけで組み立てられる."""
+        display_params = {
+            "V_dc": 300.0,
+            "V_ll": 141.0,
+            "f": 50.0,
+            "f_c": 5.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 10.0,
+        }
+        results = run_simulation(
+            normalize_ui_display_params(display_params, "natural", "voltage", "hann")
+        )
+
+        payload = build_export_payload(results, display_params)
+
+        assert payload["params"]["V_ll_rms_V"] == 141.0
+        assert payload["params"]["pwm_mode"] == "natural"
+        assert payload["metrics"]["m_a"] >= 0.0
+        assert payload["metrics"]["THD_V_pct"] >= 0.0
+        assert payload["metrics"]["THD_I_pct"] >= 0.0
+
+    def test_build_baseline_snapshot_matches_runner_metrics(self) -> None:
+        """ベースライン比較指標が runner の結果と整合する."""
+        results = run_simulation(
+            normalize_ui_display_params(
+                {
+                    "V_dc": 300.0,
+                    "V_ll": 220.0,
+                    "f": 50.0,
+                    "f_c": 5.0,
+                    "t_d": 4.0,
+                    "V_on": 1.0,
+                    "R": 10.0,
+                    "L": 10.0,
+                },
+                "third_harmonic",
+                "current",
+                "hann",
+            )
+        )
+
+        snapshot = build_baseline_snapshot(results)
+
+        assert abs(snapshot["m_a"] - results["metrics"]["m_a"]) < 1.0e-12
+        assert abs(snapshot["V1"] - results["spectra"]["v_uv"]["fundamental_mag"]) < 1.0e-12
+        assert abs(snapshot["I_measured"] - results["metrics"]["I_measured"]) < 1.0e-12
+
+
+class TestWebApi:
+    """Web API MVP の疎通と入力検証テスト."""
+
+    def test_health_endpoint_returns_version(self) -> None:
+        """health エンドポイントが API バージョンを返す."""
+        client = TestClient(app)
+
+        response = client.get("/health")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "status": "ok",
+            "simulation_api_version": SIMULATION_API_VERSION,
+        }
+
+    def test_scenarios_endpoint_returns_shared_presets(self) -> None:
+        """シナリオ API が共有 preset を返す."""
+        client = TestClient(app)
+
+        response = client.get("/scenarios")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == len(SCENARIO_PRESETS)
+        assert data[0]["label"] == SCENARIO_PRESETS[0]["label"]
+        assert "focus" in data[0]
+        assert "hint" in data[0]
+
+    def test_root_serves_web_ui_html(self) -> None:
+        """ルートで Web UI HTML を返す."""
+        client = TestClient(app)
+
+        response = client.get("/")
+
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+        assert "Web Learning Simulator" in response.text
+        assert "referencePlot" in response.text
+        assert "scenarioButtons" in response.text
+        assert "comparisonPanel" in response.text
+        assert "exportJsonButton" in response.text
+
+    def test_static_assets_are_served(self) -> None:
+        """静的アセットが配信される."""
+        client = TestClient(app)
+
+        css_response = client.get("/static/styles.css")
+        js_response = client.get("/static/app.js")
+
+        assert css_response.status_code == 200
+        assert "plot-card" in css_response.text
+        assert "scenario-grid" in css_response.text
+        assert js_response.status_code == 200
+        assert "runSimulation" in js_response.text
+        assert "fetchScenarios" in js_response.text
+        assert "exportDashboardPng" in js_response.text
+
+    def test_simulate_endpoint_returns_waveforms_and_metrics(self) -> None:
+        """simulate エンドポイントが主要データを返す."""
+        client = TestClient(app)
+        payload = {
+            "V_dc": 300.0,
+            "V_ll_rms": 141.0,
+            "f": 50.0,
+            "f_c": 5000.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 0.01,
+            "pwm_mode": "natural",
+            "fft_target": "v_uv",
+            "fft_window": "hann",
+        }
+
+        response = client.post("/simulate", json=payload)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["meta"]["simulation_api_version"] == SIMULATION_API_VERSION
+        assert data["meta"]["fft_target"] == "v_uv"
+        assert len(data["time"]) <= 1000
+        assert len(data["reference"]["u"]) == len(data["time"])
+        assert len(data["switching"]["u"]) == len(data["time"])
+        assert len(data["voltages"]["v_uv"]) == len(data["time"])
+        assert len(data["currents"]["i_u"]) == len(data["time"])
+        assert data["metrics"]["m_f"] == 100.0
+        assert data["metrics"]["THD_V"] >= 0.0
+        assert data["metrics"]["THD_I"] >= 0.0
+
+    def test_simulate_endpoint_validates_range(self) -> None:
+        """入力範囲外は 422 を返す."""
+        client = TestClient(app)
+        payload = {
+            "V_dc": 50.0,
+            "V_ll_rms": 141.0,
+            "f": 50.0,
+            "f_c": 5000.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 0.01,
+            "pwm_mode": "natural",
+            "fft_target": "v_uv",
+            "fft_window": "hann",
+        }
+
+        response = client.post("/simulate", json=payload)
+
+        assert response.status_code == 422
+
+    def test_simulate_endpoint_supports_current_fft_target(self) -> None:
+        """電流 FFT ターゲットが API 契約どおり扱われる."""
+        client = TestClient(app)
+        payload = {
+            "V_dc": 300.0,
+            "V_ll_rms": 141.0,
+            "f": 50.0,
+            "f_c": 5000.0,
+            "t_d": 4.0e-6,
+            "V_on": 1.0,
+            "R": 10.0,
+            "L": 0.01,
+            "pwm_mode": "third_harmonic",
+            "fft_target": "i_u",
+            "fft_window": "hann",
+        }
+
+        response = client.post("/simulate", json=payload)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["meta"]["fft_target"] == "i_u"
+        assert data["fft"]["target"] == "current"
+        assert data["metrics"]["m_a_limit"] > 1.0

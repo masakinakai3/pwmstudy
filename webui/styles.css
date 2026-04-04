@@ -1,0 +1,382 @@
+:root {
+  --bg-0: #f4efe6;
+  --bg-1: #e8dcc6;
+  --panel: rgba(255, 250, 242, 0.78);
+  --panel-strong: rgba(255, 247, 234, 0.92);
+  --ink: #182126;
+  --muted: #5b6468;
+  --accent: #c14f2c;
+  --accent-soft: #f0c8a8;
+  --accent-deep: #4e7a76;
+  --line: rgba(24, 33, 38, 0.12);
+  --shadow: 0 22px 60px rgba(32, 25, 17, 0.14);
+  --radius-xl: 28px;
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --font-ui: "Aptos", "Segoe UI Variable", "Yu Gothic UI", "Hiragino Sans", sans-serif;
+  --font-display: "Georgia", "Times New Roman", serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-ui);
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top left, rgba(193, 79, 44, 0.16), transparent 30%),
+    radial-gradient(circle at top right, rgba(78, 122, 118, 0.18), transparent 26%),
+    linear-gradient(160deg, var(--bg-0), var(--bg-1));
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(24, 33, 38, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(24, 33, 38, 0.035) 1px, transparent 1px);
+  background-size: 30px 30px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.8), transparent 92%);
+}
+
+.app-shell {
+  position: relative;
+  padding: 28px;
+}
+
+.hero-panel,
+.control-panel,
+.dashboard-panel,
+.plot-card,
+.metric-card,
+.insight-card {
+  backdrop-filter: blur(16px);
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: var(--shadow);
+}
+
+.hero-panel {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 28px 32px;
+  border-radius: var(--radius-xl);
+  margin-bottom: 22px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  letter-spacing: 0.16em;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  color: var(--accent-deep);
+  font-weight: 700;
+}
+
+.hero-panel h1,
+.panel-heading h2,
+.section-header h2,
+.guide-card h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1.05;
+}
+
+.hero-panel h1 {
+  font-size: clamp(2rem, 5vw, 3.6rem);
+}
+
+.hero-copy,
+#statusMessage,
+.guide-card p {
+  margin: 12px 0 0;
+  max-width: 58ch;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.status-panel {
+  min-width: 280px;
+  padding: 18px 20px;
+  border-radius: var(--radius-lg);
+  background: var(--panel-strong);
+  align-self: flex-start;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(78, 122, 118, 0.12);
+  color: var(--accent-deep);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.control-panel,
+.dashboard-panel {
+  border-radius: var(--radius-xl);
+  padding: 22px;
+}
+
+.control-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.control-row {
+  padding: 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.control-row label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-weight: 700;
+}
+
+.control-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.control-inputs {
+  display: grid;
+  grid-template-columns: 1fr 88px;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+input[type="number"],
+select,
+.reset-button,
+.action-button,
+.scenario-button {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(24, 33, 38, 0.18);
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--ink);
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.mode-panel,
+.scenario-panel,
+.action-panel {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.mode-panel label {
+  display: grid;
+  gap: 6px;
+}
+
+.mode-panel span {
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.panel-heading.compact h2 {
+  font-size: 1.3rem;
+}
+
+.reset-button,
+.action-button,
+.scenario-button {
+  background: linear-gradient(135deg, var(--accent), #dd7f3d);
+  color: #fff;
+  cursor: pointer;
+  border: none;
+  font-weight: 700;
+}
+
+.action-button.secondary,
+.scenario-button.secondary {
+  background: linear-gradient(135deg, var(--accent-deep), #6da49d);
+}
+
+.scenario-grid,
+.action-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.scenario-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.guide-card {
+  margin: 0;
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.64);
+  border: 1px solid var(--line);
+}
+
+.guide-card p {
+  margin: 6px 0 0;
+}
+
+.dashboard-panel {
+  display: grid;
+  gap: 20px;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.metric-card {
+  border-radius: var(--radius-lg);
+  padding: 16px;
+}
+
+.metric-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.metric-card strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 1.5rem;
+  font-family: var(--font-display);
+}
+
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.insight-card {
+  border-radius: var(--radius-lg);
+  padding: 18px;
+}
+
+.theory-stack,
+.comparison-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid rgba(24, 33, 38, 0.08);
+}
+
+.detail-row span {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.detail-row strong {
+  font-size: 1rem;
+}
+
+.plot-section {
+  display: grid;
+  gap: 12px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 12px;
+}
+
+.plot-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.two-up {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.plot-card {
+  border-radius: var(--radius-lg);
+  padding: 10px;
+  min-height: 340px;
+}
+
+.full-width {
+  min-height: 380px;
+}
+
+.plot-surface {
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+}
+
+@media (max-width: 1100px) {
+  .workspace-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-panel {
+    flex-direction: column;
+  }
+
+  .insight-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    padding: 16px;
+  }
+
+  .two-up,
+  .control-inputs,
+  .scenario-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plot-card,
+  .full-width {
+    min-height: 300px;
+  }
+}
