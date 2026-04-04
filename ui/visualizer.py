@@ -35,6 +35,10 @@ PWM_MODE_LABELS = {
     "third_harmonic": "Third Harmonic Injection",
     "svpwm": "Space Vector PWM",
 }
+SVPWM_MODE_LABELS = {
+    "three_phase": "SVPWM 3-Phase",
+    "two_phase": "SVPWM 2-Phase",
+}
 FFT_TARGET_LABELS = {
     "voltage": "Line Voltage v_uv",
     "current": "Phase Current i_u",
@@ -77,6 +81,7 @@ class InverterVisualizer:
         self._params = dict(default_params)
         self._pwm_mode = self._params.get("pwm_mode", "natural")
         self._overmod_view = bool(self._params.get("overmod_view", False))
+        self._svpwm_mode = self._params.get("svpwm_mode", "three_phase")
         if self._pwm_mode == "natural_overmod":
             self._pwm_mode = "natural"
             self._overmod_view = True
@@ -156,6 +161,14 @@ class InverterVisualizer:
         self._overmod_check = CheckButtons(ax_overmod, ["Overmod View"], [self._overmod_view])
         self._overmod_check.on_clicked(self._update_overmod_view)
 
+        ax_svpwm = self._fig.add_axes([0.81, 0.335, 0.16, 0.065])
+        ax_svpwm.set_title("SVPWM Mode", fontsize=9)
+        svpwm_labels = list(SVPWM_MODE_LABELS.values())
+        svpwm_active = list(SVPWM_MODE_LABELS).index(self._svpwm_mode)
+        self._svpwm_buttons = RadioButtons(ax_svpwm, svpwm_labels, active=svpwm_active)
+        self._svpwm_label_to_key = {label: key for key, label in SVPWM_MODE_LABELS.items()}
+        self._svpwm_buttons.on_clicked(self._update_svpwm_mode)
+
     def _update_mode(self, label: str) -> None:
         """PWM 方式選択のコールバック."""
         self._pwm_mode = self._mode_label_to_key[label]
@@ -164,6 +177,11 @@ class InverterVisualizer:
     def _update_overmod_view(self, label: str) -> None:
         """Overmod View 切替のコールバック."""
         self._overmod_view = bool(self._overmod_check.get_status()[0])
+        self._update(None)
+
+    def _update_svpwm_mode(self, label: str) -> None:
+        """SVPWM 変調方式選択のコールバック."""
+        self._svpwm_mode = self._svpwm_label_to_key[label]
         self._update(None)
 
     def _setup_fft_controls(self) -> None:
@@ -281,6 +299,9 @@ class InverterVisualizer:
             current_overmod = bool(self._overmod_check.get_status()[0])
             if scenario_overmod != current_overmod:
                 self._overmod_check.set_active(0)
+            scenario_svpwm_mode = str(scenario.get("svpwm_mode", "three_phase"))
+            svpwm_idx = list(SVPWM_MODE_LABELS).index(scenario_svpwm_mode)
+            self._svpwm_buttons.set_active(svpwm_idx)
             fft_target_idx = list(FFT_TARGET_LABELS).index(scenario["fft_target"])
             self._fft_target_buttons.set_active(fft_target_idx)
             fft_window_idx = list(FFT_WINDOW_LABELS).index(scenario["fft_window"])
@@ -458,6 +479,7 @@ class InverterVisualizer:
             self._fft_target,
             self._fft_window,
             overmod_view=self._overmod_view,
+            svpwm_mode=self._svpwm_mode,
         )
 
     def _run_simulation(
@@ -508,6 +530,10 @@ class InverterVisualizer:
             clamp_str = f" (過変調観察中: 線形上限 {m_a_limit:.3f} を超過)"
         info_lines = [
             f"方式 = {results['pwm_mode_label']}",
+            (
+                f"SVPWM = {results['svpwm_mode_label']}"
+                if results["pwm_mode"] == "svpwm" else "SVPWM = (inactive)"
+            ),
             f"m_a = {m_a:.3f}{clamp_str}    "
             f"m_f = f_c/f = {m_f:.1f}",
             f"t_d = {t_d_us:.2f} us    "

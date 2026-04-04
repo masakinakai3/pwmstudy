@@ -190,6 +190,32 @@ class TestReferenceGenerator:
         assert np.max(np.abs(v_w_svpwm)) <= 1.0 + 1e-10
         assert fund_svpwm > fund_sin * 1.03
 
+    def test_svpwm_two_phase_clamps_one_leg_and_preserves_line_voltage(self) -> None:
+        """SVPWM 2相変調では1相クランプが生じ、線間参照差は3相変調と一致する."""
+        V_ll_target = 180.0
+        v_u_3p, v_v_3p, v_w_3p = generate_reference(
+            V_ll_target,
+            F,
+            V_DC,
+            T,
+            mode="svpwm",
+            svpwm_mode="three_phase",
+        )
+        v_u_2p, v_v_2p, v_w_2p = generate_reference(
+            V_ll_target,
+            F,
+            V_DC,
+            T,
+            mode="svpwm",
+            svpwm_mode="two_phase",
+        )
+
+        phase_stack_2p = np.vstack((v_u_2p, v_v_2p, v_w_2p))
+        clamped_metric = np.max(np.abs(phase_stack_2p), axis=0)
+
+        assert np.allclose(clamped_metric, 1.0, atol=1e-10)
+        assert np.allclose(v_u_2p - v_v_2p, v_u_3p - v_v_3p, atol=1e-10)
+
 
 class TestCarrierGenerator:
     """キャリア生成モジュールのテスト."""
@@ -607,6 +633,7 @@ class TestScenarioPresets:
             assert "sliders" in scenario, "sliders キーがない"
             assert "pwm_mode" in scenario, "pwm_mode キーがない"
             assert "overmod_view" in scenario, "overmod_view キーがない"
+            assert "svpwm_mode" in scenario, "svpwm_mode キーがない"
             assert "fft_target" in scenario, "fft_target キーがない"
             assert "fft_window" in scenario, "fft_window キーがない"
             assert set(scenario["sliders"].keys()) == required_slider_keys, (
@@ -623,6 +650,9 @@ class TestScenarioPresets:
             )
             assert isinstance(scenario["overmod_view"], bool), (
                 f"シナリオ '{scenario['label']}' の overmod_view が bool でない"
+            )
+            assert scenario["svpwm_mode"] in {"three_phase", "two_phase"}, (
+                f"シナリオ '{scenario['label']}' の svpwm_mode が無効"
             )
 
     def test_scenario_slider_values_in_valid_range(self) -> None:
@@ -767,6 +797,34 @@ class TestSimulationRunnerContract:
         assert results["metrics"]["m_a"] > 1.0
         assert results["metrics"]["m_a"] == results["metrics"]["m_a_raw"]
 
+    def test_svpwm_mode_switch_is_reflected_in_meta(self) -> None:
+        """SVPWM 2相/3相選択が実行結果メタ情報に反映される."""
+        params_3p = {
+            "V_dc": 300.0,
+            "V_ll": 180.0,
+            "f": 50.0,
+            "f_c": 5000.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 0.01,
+            "pwm_mode": "svpwm",
+            "overmod_view": False,
+            "svpwm_mode": "three_phase",
+            "fft_target": "voltage",
+            "fft_window": "hann",
+        }
+        params_2p = dict(params_3p)
+        params_2p["svpwm_mode"] = "two_phase"
+
+        result_3p = run_simulation(params_3p)
+        result_2p = run_simulation(params_2p)
+
+        assert result_3p["meta"]["svpwm_mode"] == "three_phase"
+        assert result_2p["meta"]["svpwm_mode"] == "two_phase"
+        assert result_3p["meta"]["pwm_mode"] == "svpwm"
+        assert result_2p["meta"]["pwm_mode"] == "svpwm"
+
 
 class TestApplicationServices:
     """web 移行 Phase 1 の application サービス層テスト."""
@@ -788,6 +846,7 @@ class TestApplicationServices:
             "current",
             "hann",
             overmod_view=True,
+            svpwm_mode="two_phase",
         )
 
         assert params["V_dc"] == 300.0
@@ -797,6 +856,7 @@ class TestApplicationServices:
         assert params["L"] == 0.01
         assert params["pwm_mode"] == "regular"
         assert params["overmod_view"] is True
+        assert params["svpwm_mode"] == "two_phase"
         assert params["fft_target"] == "current"
 
     def test_build_export_payload_uses_structured_results(self) -> None:
@@ -1005,6 +1065,7 @@ class TestWebApi:
             "L": 0.01,
             "pwm_mode": "svpwm",
             "overmod_view": False,
+            "svpwm_mode": "two_phase",
             "fft_target": "v_uv",
             "fft_window": "hann",
         }
@@ -1014,6 +1075,7 @@ class TestWebApi:
         assert response.status_code == 200
         data = response.json()
         assert data["meta"]["pwm_mode"] == "svpwm"
+        assert data["meta"]["svpwm_mode"] == "two_phase"
         assert data["metrics"]["m_a_limit"] > 1.0
 
     def test_simulate_endpoint_accepts_overmod_checkbox(self) -> None:

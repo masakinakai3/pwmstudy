@@ -31,6 +31,10 @@ PWM_MODE_LABELS = {
     "third_harmonic": "Third Harmonic Injection",
     "svpwm": "Space Vector PWM",
 }
+SVPWM_MODE_LABELS = {
+    "three_phase": "SVPWM 3-Phase Modulation",
+    "two_phase": "SVPWM 2-Phase Modulation",
+}
 FFT_TARGET_LABELS = {
     "voltage": "Line Voltage v_uv",
     "current": "Phase Current i_u",
@@ -156,6 +160,7 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
     L = float(params["L"])
     pwm_mode = str(params["pwm_mode"])
     overmod_view = bool(params.get("overmod_view", False))
+    svpwm_mode = str(params.get("svpwm_mode", "three_phase"))
     fft_target = str(params["fft_target"])
     fft_window = str(params["fft_window"])
 
@@ -163,6 +168,8 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
     if pwm_mode == "natural_overmod":
         pwm_mode = "natural"
         overmod_view = True
+    if svpwm_mode not in SVPWM_MODE_LABELS:
+        raise ValueError(f"Unsupported svpwm mode: {svpwm_mode}")
 
     tau = L / R
     T_cycle = 1.0 / f
@@ -191,6 +198,7 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
         t,
         mode=reference_mode,
         limit_linear=limit_linear,
+        svpwm_mode=svpwm_mode,
     )
     v_u_mod, v_v_mod, v_w_mod = apply_sampling_mode(
         v_u_ref,
@@ -272,6 +280,8 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
             "pwm_mode_label": PWM_MODE_LABELS[pwm_mode],
             "sampling_mode": sampling_mode,
             "overmod_view": overmod_view,
+            "svpwm_mode": svpwm_mode,
+            "svpwm_mode_label": SVPWM_MODE_LABELS[svpwm_mode],
             "fft_target": fft_target,
             "fft_target_label": FFT_TARGET_LABELS[fft_target],
             "fft_window": fft_window,
@@ -339,6 +349,7 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
             "R": R,
             "L": L,
             "overmod_view": overmod_view,
+            "svpwm_mode": svpwm_mode,
             "dt_actual": dt_actual,
             "m_a": m_a,
             "m_a_raw": m_a_raw,
@@ -377,6 +388,8 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
         "pwm_mode_label": PWM_MODE_LABELS[pwm_mode],
         "sampling_mode": sampling_mode,
         "overmod_view": overmod_view,
+        "svpwm_mode": svpwm_mode,
+        "svpwm_mode_label": SVPWM_MODE_LABELS[svpwm_mode],
         "fft_target": fft_target,
         "fft_target_label": FFT_TARGET_LABELS[fft_target],
         "fft_window": fft_window,
@@ -432,6 +445,7 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
             "pwm_mode": meta["pwm_mode"],
             "sampling_mode": meta["sampling_mode"],
             "overmod_view": bool(meta["overmod_view"]),
+            "svpwm_mode": meta["svpwm_mode"],
             "fft_target": meta["fft_target"],
             "fft_window": meta["fft_window"],
             "points_per_carrier": int(meta["points_per_carrier"]),
@@ -448,6 +462,7 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
             "R": float(metrics["R"]),
             "L": float(metrics["L"]),
             "overmod_view": bool(metrics["overmod_view"]),
+            "svpwm_mode": metrics["svpwm_mode"],
         },
         "time": _to_serializable_list(display_time[time_indices]),
         "reference": {

@@ -12,6 +12,7 @@ def main() -> None:
         "f_c": 5000.0,    # [Hz] キャリア周波数
         "pwm_mode": "natural",  # PWM 方式
         "overmod_view": False,  # True で線形クランプを無効化
+        "svpwm_mode": "three_phase",  # SVPWM方式（three_phase / two_phase）
         "fft_target": "voltage",  # FFT 表示対象
         "fft_window": "hann",  # FFT 窓関数
         "t_d":    0.0,    # [s]  デッドタイム

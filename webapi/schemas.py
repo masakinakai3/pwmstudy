@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 
 PwmMode = Literal["natural", "regular", "third_harmonic", "svpwm"]
+SvpwmMode = Literal["three_phase", "two_phase"]
 ApiFftTarget = Literal["v_uv", "i_u"]
 FftWindow = Literal["hann", "rectangular"]
 
@@ -25,6 +26,7 @@ class SimulationRequest(BaseModel):
     L: float = Field(ge=0.1e-3, le=100e-3)
     pwm_mode: PwmMode = "natural"
     overmod_view: bool = False
+    svpwm_mode: SvpwmMode = "three_phase"
     fft_target: ApiFftTarget = "v_uv"
     fft_window: FftWindow = "hann"
 
@@ -43,6 +45,7 @@ class SimulationRequest(BaseModel):
             "L": self.L,
             "pwm_mode": self.pwm_mode,
             "overmod_view": self.overmod_view,
+            "svpwm_mode": self.svpwm_mode,
             "fft_target": fft_target,
             "fft_window": self.fft_window,
         }

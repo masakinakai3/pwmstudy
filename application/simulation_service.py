@@ -14,6 +14,7 @@ def normalize_ui_display_params(
     fft_target: str,
     fft_window: str,
     overmod_view: bool = False,
+    svpwm_mode: str = "three_phase",
 ) -> dict[str, object]:
     """UI 表示単位のパラメータを SI 単位系へ変換する.
 
@@ -25,6 +26,7 @@ def normalize_ui_display_params(
         fft_target: FFT 表示対象。
         fft_window: FFT 窓関数。
         overmod_view: True のとき線形変調クランプを無効化する。
+        svpwm_mode: SVPWM 方式（three_phase / two_phase）。
 
     Returns:
         simulation runner へ渡す SI 単位系の辞書。
@@ -40,6 +42,7 @@ def normalize_ui_display_params(
         "L": float(display_params["L"]) / 1000.0,
         "pwm_mode": pwm_mode,
         "overmod_view": bool(overmod_view),
+        "svpwm_mode": svpwm_mode,
         "fft_target": fft_target,
         "fft_window": fft_window,
     }

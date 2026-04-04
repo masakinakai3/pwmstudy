@@ -16,6 +16,13 @@ def _validate_reference_mode(mode: str) -> None:
         raise ValueError(f"Unsupported reference mode: {mode}")
 
 
+def _validate_svpwm_mode(svpwm_mode: str) -> None:
+    """SVPWM 変調方式名を検証する."""
+    valid_svpwm_modes = {"three_phase", "two_phase"}
+    if svpwm_mode not in valid_svpwm_modes:
+        raise ValueError(f"Unsupported svpwm mode: {svpwm_mode}")
+
+
 def generate_reference(
     V_ll: float,  # [V] 線間電圧RMS値
     f: float,     # [Hz] 出力周波数
@@ -23,6 +30,7 @@ def generate_reference(
     t: np.ndarray,  # [s] 時間配列
     mode: str = "sinusoidal",
     limit_linear: bool = True,
+    svpwm_mode: str = "three_phase",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """三相正弦波の正規化変調信号を生成する.
 
@@ -36,11 +44,16 @@ def generate_reference(
             third_harmonic: 三次高調波注入参照
             svpwm: 空間ベクトルPWM相当の零相注入参照
         limit_linear: True の場合は線形変調上限でクランプする
+        svpwm_mode: SVPWM の変調方式
+            three_phase: 3相変調（連続PWM）
+            two_phase: 2相変調（不連続PWM, 1相クランプ）
 
     Returns:
         (v_u, v_v, v_w): 各相の正規化変調信号、値域 [-1, 1]
     """
     _validate_reference_mode(mode)
+    if mode == "svpwm":
+        _validate_svpwm_mode(svpwm_mode)
 
     V_ph_peak = V_ll * np.sqrt(2.0) / np.sqrt(3.0)  # [V] 相電圧ピーク値 (V_ll は RMS)
     m_a = 2.0 * V_ph_peak / V_dc                      # 変調率
@@ -60,11 +73,16 @@ def generate_reference(
         v_v = m_a * phase_v + zero_sequence
         v_w = m_a * phase_w + zero_sequence
     elif mode == "svpwm":
-        # 空間ベクトルPWMの等価零相注入: 各時刻で max/min の中点を相殺する。
+        # 空間ベクトルPWMの等価零相注入。
         phase_stack = m_a * np.vstack((phase_u, phase_v, phase_w))
-        v_max = np.max(phase_stack, axis=0)
-        v_min = np.min(phase_stack, axis=0)
-        zero_sequence = -0.5 * (v_max + v_min)
+        v_max = np.max(phase_stack, axis=0)  # [p.u.]
+        v_min = np.min(phase_stack, axis=0)  # [p.u.]
+        if svpwm_mode == "three_phase":
+            zero_sequence = -0.5 * (v_max + v_min)
+        else:
+            # two_phase: 1相を ±1 へクランプする不連続PWMオフセット。
+            use_upper_clamp = (v_max + v_min) <= 0.0
+            zero_sequence = np.where(use_upper_clamp, 1.0 - v_max, -1.0 - v_min)
         v_u = phase_stack[0] + zero_sequence
         v_v = phase_stack[1] + zero_sequence
         v_w = phase_stack[2] + zero_sequence

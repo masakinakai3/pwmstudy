@@ -9,6 +9,7 @@ const defaultDisplayValues = {
   L_mh: 10.0,
   pwm_mode: "natural",
   overmod_view: false,
+  svpwm_mode: "three_phase",
   fft_target: "v_uv",
   fft_window: "hann",
 };
@@ -137,10 +138,11 @@ function initializeControls() {
 
   document.getElementById("pwmMode").value = defaultDisplayValues.pwm_mode;
   document.getElementById("overmodView").checked = defaultDisplayValues.overmod_view;
+  document.getElementById("svpwmMode").value = defaultDisplayValues.svpwm_mode;
   document.getElementById("fftTarget").value = defaultDisplayValues.fft_target;
   document.getElementById("fftWindow").value = defaultDisplayValues.fft_window;
 
-  ["pwmMode", "overmodView", "fftTarget", "fftWindow"].forEach((id) => {
+  ["pwmMode", "overmodView", "svpwmMode", "fftTarget", "fftWindow"].forEach((id) => {
     document.getElementById(id).addEventListener("change", scheduleSimulation);
   });
 
@@ -148,6 +150,7 @@ function initializeControls() {
     applyDisplayValues(defaultDisplayValues);
     document.getElementById("pwmMode").value = defaultDisplayValues.pwm_mode;
     document.getElementById("overmodView").checked = defaultDisplayValues.overmod_view;
+    document.getElementById("svpwmMode").value = defaultDisplayValues.svpwm_mode;
     document.getElementById("fftTarget").value = defaultDisplayValues.fft_target;
     document.getElementById("fftWindow").value = defaultDisplayValues.fft_window;
     renderScenarioGuide();
@@ -183,6 +186,7 @@ function collectPayload() {
     L: values.L_mh / 1000.0,
     pwm_mode: document.getElementById("pwmMode").value,
     overmod_view: document.getElementById("overmodView").checked,
+    svpwm_mode: document.getElementById("svpwmMode").value,
     fft_target: document.getElementById("fftTarget").value,
     fft_window: document.getElementById("fftWindow").value,
   };
@@ -303,6 +307,7 @@ function applyScenario(index) {
   });
   document.getElementById("pwmMode").value = scenario.pwm_mode;
   document.getElementById("overmodView").checked = Boolean(scenario.overmod_view);
+  document.getElementById("svpwmMode").value = scenario.svpwm_mode || "three_phase";
   document.getElementById("fftTarget").value = scenario.fft_target === "current" ? "i_u" : "v_uv";
   document.getElementById("fftWindow").value = scenario.fft_window;
   renderScenarioGuide(index);
