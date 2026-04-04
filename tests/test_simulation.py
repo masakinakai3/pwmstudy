@@ -700,6 +700,9 @@ class TestSimulationRunnerContract:
         assert len(response["reference"]["u"]) == len(response["time"])
         assert len(response["voltages"]["v_uv"]) == len(response["time"])
         assert len(response["currents"]["i_u_theory"]) == len(response["time"])
+        assert len(response["carrier_plot"]["time"]) == len(response["carrier_plot"]["waveform"])
+        assert len(response["carrier_plot"]["time"]) >= len(response["time"])
+        assert len(response["carrier_plot"]["time"]) <= 4000
         assert len(response["fft"]["v_uv"]["freq"]) <= 1000
         assert response["metrics"]["THD_V"] >= 0.0
         assert response["metrics"]["THD_I"] >= 0.0
@@ -871,6 +874,8 @@ class TestWebApi:
         assert len(data["switching"]["u"]) == len(data["time"])
         assert len(data["voltages"]["v_uv"]) == len(data["time"])
         assert len(data["currents"]["i_u"]) == len(data["time"])
+        assert len(data["carrier_plot"]["time"]) == len(data["carrier_plot"]["waveform"])
+        assert len(data["carrier_plot"]["time"]) >= len(data["time"])
         assert data["metrics"]["m_f"] == 100.0
         assert data["metrics"]["THD_V"] >= 0.0
         assert data["metrics"]["THD_I"] >= 0.0

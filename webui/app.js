@@ -305,12 +305,22 @@ function applyScenario(index) {
 
 function renderPlots(data) {
   const timeMs = data.time.map((value) => value * 1000.0);
+  const carrierPlot = data.carrier_plot || null;
+  const carrierTimeMs = carrierPlot
+    ? carrierPlot.time.map((value) => value * 1000.0)
+    : timeMs;
+  const carrierWaveform = carrierPlot ? carrierPlot.waveform : data.carrier;
 
   Plotly.react("referencePlot", [
     { x: timeMs, y: data.reference.u, name: "u ref", line: { color: "#c14f2c", width: 2 } },
     { x: timeMs, y: data.reference.v, name: "v ref", line: { color: "#4e7a76", width: 2 } },
     { x: timeMs, y: data.reference.w, name: "w ref", line: { color: "#6a5495", width: 2 } },
-    { x: timeMs, y: data.carrier, name: "carrier", line: { color: "#2d3748", width: 1.2, dash: "dot" } },
+    {
+      x: carrierTimeMs,
+      y: carrierWaveform,
+      name: "carrier",
+      line: { color: "#2d3748", width: 1.2, dash: "dot" },
+    },
   ], {
     ...plotTheme,
     title: "変調信号とキャリア",

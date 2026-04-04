@@ -22,6 +22,7 @@ POINTS_PER_CARRIER = 100
 N_DISPLAY_CYCLES = 2
 N_WARMUP_CYCLES_MIN = 5
 NONIDEAL_CORRECTION_STEPS = 2
+WEB_CARRIER_POINT_FACTOR = 4
 SIMULATION_API_VERSION = "phase5-v1"
 
 PWM_MODE_LABELS = {
@@ -388,6 +389,8 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
     """
     display_time = np.asarray(results["time"]["display_s"])
     time_indices = _select_downsample_indices(len(display_time), max_points)
+    carrier_max_points = min(len(display_time), max_points * WEB_CARRIER_POINT_FACTOR)
+    carrier_indices = _select_downsample_indices(len(display_time), carrier_max_points)
 
     reference = results["reference"]
     modulation = results["modulation"]
@@ -432,6 +435,10 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
             "w": _to_serializable_list(np.asarray(modulation["w"])[time_indices]),
         },
         "carrier": _to_serializable_list(np.asarray(carrier["waveform"])[time_indices]),
+        "carrier_plot": {
+            "time": _to_serializable_list(display_time[carrier_indices]),
+            "waveform": _to_serializable_list(np.asarray(carrier["waveform"])[carrier_indices]),
+        },
         "switching": {
             "u": _to_serializable_list(np.asarray(switching["u"])[time_indices]),
             "v": _to_serializable_list(np.asarray(switching["v"])[time_indices]),
