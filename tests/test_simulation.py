@@ -24,7 +24,7 @@ from simulation.fft_analyzer import analyze_spectrum
 
 # --- 共通パラメータ ---
 V_DC = 300.0   # [V]
-V_LL = 200.0   # [V]
+V_LL = 150.0   # [V]  線間電圧指令RMS値 (m_a ≈ 0.816, sinusoidal線形範囲内)
 F = 50.0        # [Hz]
 F_C = 5000.0    # [Hz]
 R = 10.0        # [Ω]
@@ -140,7 +140,7 @@ class TestReferenceGenerator:
     def test_third_harmonic_extends_linear_modulation_range(self) -> None:
         """三次高調波注入では自然サンプリングより高い基本波を維持できる."""
         m_a_target = 1.10
-        V_ll_target = m_a_target * V_DC * np.sqrt(3.0) / 2.0
+        V_ll_target = m_a_target * V_DC * np.sqrt(3.0) / (2.0 * np.sqrt(2.0))
 
         v_u_sin, v_v_sin, v_w_sin = generate_reference(V_ll_target, F, V_DC, T)
         v_u_thi, v_v_thi, v_w_thi = generate_reference(
@@ -335,8 +335,8 @@ class TestRlLoadSolver:
         i_u_last = i_u[-points_two_cycles:]
 
         # 理論値
-        V_ph = V_LL / np.sqrt(3)                     # [V]
-        m_a = min(2.0 * V_ph / V_DC, 1.0)
+        V_ph_peak = V_LL * np.sqrt(2.0) / np.sqrt(3.0)  # [V] V_LL は RMS
+        m_a = min(2.0 * V_ph_peak / V_DC, 1.0)
         V_ph_fund = m_a * V_DC / 2.0                  # [V] 基本波相電圧振幅
         Z = np.sqrt(R**2 + (2.0 * np.pi * F * L)**2)  # [Ω] インピーダンス
         I_theory = V_ph_fund / Z                       # [A] 理論電流振幅
@@ -628,7 +628,7 @@ class TestSimulationRunnerContract:
         """runner が UI 非依存の構造化結果辞書を返す."""
         params = {
             "V_dc": 300.0,
-            "V_ll": 141.0 * np.sqrt(2.0),
+            "V_ll": 141.0,
             "f": 50.0,
             "f_c": 5000.0,
             "t_d": 0.0,
@@ -731,7 +731,7 @@ class TestApplicationServices:
         )
 
         assert params["V_dc"] == 300.0
-        assert abs(params["V_ll"] - 141.0 * np.sqrt(2.0)) < 1.0e-10
+        assert params["V_ll"] == 141.0
         assert params["f_c"] == 5000.0
         assert params["t_d"] == 4.0e-6
         assert params["L"] == 0.01
@@ -845,6 +845,7 @@ class TestWebApi:
         assert "runSimulation" in js_response.text
         assert "fetchScenarios" in js_response.text
         assert "exportDashboardPng" in js_response.text
+        assert "v_uv fundamental" in js_response.text
 
     def test_simulate_endpoint_returns_waveforms_and_metrics(self) -> None:
         """simulate エンドポイントが主要データを返す."""
@@ -877,6 +878,9 @@ class TestWebApi:
         assert len(data["carrier_plot"]["time"]) == len(data["carrier_plot"]["waveform"])
         assert len(data["carrier_plot"]["time"]) >= len(data["time"])
         assert data["metrics"]["m_f"] == 100.0
+        assert data["metrics"]["V_LL_rms_out"] == data["fft"]["v_uv"]["fundamental_rms"]
+        assert data["metrics"]["V_LL_rms_total"] == data["fft"]["v_uv"]["rms_total"]
+        assert data["metrics"]["V_LL_rms_total"] >= data["metrics"]["V_LL_rms_out"]
         assert data["metrics"]["THD_V"] >= 0.0
         assert data["metrics"]["THD_I"] >= 0.0
 

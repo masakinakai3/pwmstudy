@@ -34,7 +34,8 @@ const metricDefinitions = [
   { key: "m_f", label: "m_f", digits: 1 },
   { key: "THD_V", label: "THD_V [%]", digits: 1 },
   { key: "THD_I", label: "THD_I [%]", digits: 1 },
-  { key: "V_rms", label: "V_rms [V]", digits: 1 },
+  { key: "V_LL_rms_out", label: "V_LL,out,fund(rms) [V]", digits: 1 },
+  { key: "V_LL_rms_total", label: "V_LL,total(rms) [V]", digits: 1 },
   { key: "I_rms", label: "I_rms [A]", digits: 2 },
   { key: "pf1_fft", label: "PF1", digits: 3 },
   { key: "I1_pk", label: "I1_pk [A]", digits: 2 },
@@ -332,6 +333,12 @@ function renderPlots(data) {
     { x: timeMs, y: data.voltages.v_uv, name: "v_uv", line: { color: "#c14f2c", width: 2 } },
     { x: timeMs, y: data.voltages.v_vw, name: "v_vw", line: { color: "#4e7a76", width: 2 } },
     { x: timeMs, y: data.voltages.v_wu, name: "v_wu", line: { color: "#6a5495", width: 2 } },
+    {
+      x: timeMs,
+      y: data.voltages.v_uv_fund,
+      name: "v_uv fundamental",
+      line: { color: "#182126", width: 2.2, dash: "dash" },
+    },
   ];
   if (baselineResponse) {
     const baselineTimeMs = baselineResponse.time.map((value) => value * 1000.0);

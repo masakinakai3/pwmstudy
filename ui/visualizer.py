@@ -462,8 +462,8 @@ class InverterVisualizer:
         t_ms = results["t"] * 1000.0  # [ms] 表示用
 
         # === 情報パネル: 導出量の表示 ===
-        V_ph = results["V_ll"] / np.sqrt(3)  # [V]
-        m_a_raw = 2.0 * V_ph / results["V_dc"]  # クランプ前の変調率
+        V_ph_peak = results["V_ll"] * np.sqrt(2.0) / np.sqrt(3.0)  # [V] V_ll は RMS
+        m_a_raw = 2.0 * V_ph_peak / results["V_dc"]  # クランプ前の変調率
         m_a_limit = results["m_a_limit"]
         m_a = min(m_a_raw, m_a_limit)
         m_f = results["m_f"]

@@ -29,7 +29,7 @@ def normalize_ui_display_params(
     """
     return {
         "V_dc": float(display_params["V_dc"]),
-        "V_ll": float(display_params["V_ll"]) * np.sqrt(2.0),
+        "V_ll": float(display_params["V_ll"]),  # [V RMS] — 変換不要（generate_reference が内部でピーク換算）
         "f": float(display_params["f"]),
         "f_c": float(display_params["f_c"]) * 1000.0,
         "t_d": float(display_params["t_d"]) * 1.0e-6,

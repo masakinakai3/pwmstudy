@@ -17,7 +17,7 @@ def _validate_reference_mode(mode: str) -> None:
 
 
 def generate_reference(
-    V_ll: float,  # [V] 線間電圧振幅
+    V_ll: float,  # [V] 線間電圧RMS値
     f: float,     # [Hz] 出力周波数
     V_dc: float,  # [V] 直流母線電圧
     t: np.ndarray,  # [s] 時間配列
@@ -26,7 +26,7 @@ def generate_reference(
     """三相正弦波の正規化変調信号を生成する.
 
     Args:
-        V_ll: 線間電圧振幅 [V]
+        V_ll: 線間電圧RMS値 [V]
         f: 出力周波数 [Hz]
         V_dc: 直流母線電圧 [V]
         t: 時間配列 [s]
@@ -39,8 +39,8 @@ def generate_reference(
     """
     _validate_reference_mode(mode)
 
-    V_ph = V_ll / np.sqrt(3)  # [V] 相電圧振幅
-    m_a = 2.0 * V_ph / V_dc   # 変調率
+    V_ph_peak = V_ll * np.sqrt(2.0) / np.sqrt(3.0)  # [V] 相電圧ピーク値 (V_ll は RMS)
+    m_a = 2.0 * V_ph_peak / V_dc                      # 変調率
     m_a_limit = THIRD_HARMONIC_LIMIT if mode == "third_harmonic" else 1.0
     m_a = min(m_a, m_a_limit)  # 線形変調範囲でクランプ
 

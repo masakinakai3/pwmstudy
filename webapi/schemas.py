@@ -33,7 +33,7 @@ class SimulationRequest(BaseModel):
 
         return {
             "V_dc": self.V_dc,
-            "V_ll": self.V_ll_rms * (2.0 ** 0.5),
+            "V_ll": self.V_ll_rms,  # [V RMS] — 変換不要（generate_reference が内部でピーク換算）
             "f": self.f,
             "f_c": self.f_c,
             "t_d": self.t_d,

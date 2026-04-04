@@ -139,7 +139,7 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
 
     Args:
         params: SI 単位系のパラメータ辞書。
-            V_dc [V], V_ll [V peak], f [Hz], f_c [Hz], t_d [s], V_on [V],
+            V_dc [V], V_ll [V RMS], f [Hz], f_c [Hz], t_d [s], V_on [V],
             R [Ω], L [H], pwm_mode, fft_target, fft_window を含む。
 
     Returns:
@@ -240,8 +240,8 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
     phase_diff = np.arctan2(np.sin(phase_diff), np.cos(phase_diff))
     pf1_fft = np.cos(phase_diff)
 
-    V_ph = V_ll / np.sqrt(3.0)
-    m_a_raw = 2.0 * V_ph / V_dc
+    V_ph_peak = V_ll * np.sqrt(2.0) / np.sqrt(3.0)  # [V] V_ll は RMS
+    m_a_raw = 2.0 * V_ph_peak / V_dc
     m_a_limit = THIRD_HARMONIC_LIMIT if pwm_mode == "third_harmonic" else 1.0
     m_a = min(m_a_raw, m_a_limit)
 
@@ -310,7 +310,7 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
         "metrics": {
             "V_dc": V_dc,
             "V_ll": V_ll,
-            "V_ll_rms": V_ll / np.sqrt(2.0),
+            "V_ll_rms": V_ll,  # [V RMS] — V_ll はすでに RMS 値
             "f": f,
             "f_c": f_c,
             "t_d": t_d,
@@ -479,6 +479,8 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
             "I_measured": float(metrics["I_measured"]),
             "V1_pk": float(spectra["v_uv"]["fundamental_mag"]),
             "V_rms": float(spectra["v_uv"]["rms_total"]),
+            "V_LL_rms_out": float(spectra["v_uv"]["fundamental_rms"]),
+            "V_LL_rms_total": float(spectra["v_uv"]["rms_total"]),
             "THD_V": float(spectra["v_uv"]["thd"]),
             "I1_pk": float(spectra["i_u"]["fundamental_mag"]),
             "I_rms": float(spectra["i_u"]["rms_total"]),
