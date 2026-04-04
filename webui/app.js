@@ -12,6 +12,9 @@ const defaultDisplayValues = {
   svpwm_mode: "three_phase",
   fft_target: "v_uv",
   fft_window: "hann",
+  show_u_ref: true,
+  show_v_ref: true,
+  show_w_ref: true,
 };
 
 let scenarioPresets = [];
@@ -141,9 +144,19 @@ function initializeControls() {
   document.getElementById("svpwmMode").value = defaultDisplayValues.svpwm_mode;
   document.getElementById("fftTarget").value = defaultDisplayValues.fft_target;
   document.getElementById("fftWindow").value = defaultDisplayValues.fft_window;
+  document.getElementById("showURef").checked = defaultDisplayValues.show_u_ref;
+  document.getElementById("showVRef").checked = defaultDisplayValues.show_v_ref;
+  document.getElementById("showWRef").checked = defaultDisplayValues.show_w_ref;
 
   ["pwmMode", "overmodView", "svpwmMode", "fftTarget", "fftWindow"].forEach((id) => {
     document.getElementById(id).addEventListener("change", scheduleSimulation);
+  });
+  ["showURef", "showVRef", "showWRef"].forEach((id) => {
+    document.getElementById(id).addEventListener("change", () => {
+      if (currentResponse) {
+        renderPlots(currentResponse);
+      }
+    });
   });
 
   document.getElementById("resetButton").addEventListener("click", () => {
@@ -153,6 +166,9 @@ function initializeControls() {
     document.getElementById("svpwmMode").value = defaultDisplayValues.svpwm_mode;
     document.getElementById("fftTarget").value = defaultDisplayValues.fft_target;
     document.getElementById("fftWindow").value = defaultDisplayValues.fft_window;
+    document.getElementById("showURef").checked = defaultDisplayValues.show_u_ref;
+    document.getElementById("showVRef").checked = defaultDisplayValues.show_v_ref;
+    document.getElementById("showWRef").checked = defaultDisplayValues.show_w_ref;
     renderScenarioGuide();
     scheduleSimulation();
   });
@@ -322,17 +338,43 @@ function renderPlots(data) {
     : timeMs;
   const carrierWaveform = carrierPlot ? carrierPlot.waveform : data.carrier;
 
-  Plotly.react("referencePlot", [
-    { x: timeMs, y: data.reference.u, name: "u ref", line: { color: "#c14f2c", width: 2 } },
-    { x: timeMs, y: data.reference.v, name: "v ref", line: { color: "#4e7a76", width: 2 } },
-    { x: timeMs, y: data.reference.w, name: "w ref", line: { color: "#6a5495", width: 2 } },
-    {
-      x: carrierTimeMs,
-      y: carrierWaveform,
-      name: "carrier",
-      line: { color: "#2d3748", width: 1.2, dash: "dot" },
-    },
-  ], {
+  const showURef = document.getElementById("showURef").checked;
+  const showVRef = document.getElementById("showVRef").checked;
+  const showWRef = document.getElementById("showWRef").checked;
+  const referenceTraces = [];
+
+  if (showURef) {
+    referenceTraces.push({
+      x: timeMs,
+      y: data.reference.u,
+      name: "u ref",
+      line: { color: "#c14f2c", width: 2 },
+    });
+  }
+  if (showVRef) {
+    referenceTraces.push({
+      x: timeMs,
+      y: data.reference.v,
+      name: "v ref",
+      line: { color: "#4e7a76", width: 2 },
+    });
+  }
+  if (showWRef) {
+    referenceTraces.push({
+      x: timeMs,
+      y: data.reference.w,
+      name: "w ref",
+      line: { color: "#6a5495", width: 2 },
+    });
+  }
+  referenceTraces.push({
+    x: carrierTimeMs,
+    y: carrierWaveform,
+    name: "carrier",
+    line: { color: "#2d3748", width: 1.2, dash: "dot" },
+  });
+
+  Plotly.react("referencePlot", referenceTraces, {
     ...plotTheme,
     title: "変調信号とキャリア",
     xaxis: { ...plotTheme.xaxis, title: "時間 [ms]" },

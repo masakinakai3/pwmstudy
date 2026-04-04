@@ -325,6 +325,32 @@ select,
   gap: 12px;
 }
 
+.section1-toggle-group {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.section1-toggle-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.66);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.section1-toggle-item input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .plot-grid {
   display: grid;
   gap: 14px;
