@@ -7,15 +7,16 @@ const defaultDisplayValues = {
   V_on: 0.0,
   R: 10.0,
   L_mh: 10.0,
-  reference_mode: "sinusoidal",
-  sampling_mode: "natural",
-  clamp_mode: "continuous",
+  modulation_mode: "carrier",
   overmod_view: false,
   fft_target: "v_uv",
   fft_window: "hann",
   show_u_ref: true,
   show_v_ref: true,
   show_w_ref: true,
+  show_line_v_uv: true,
+  show_line_v_vw: false,
+  show_line_v_wu: false,
 };
 
 let scenarioPresets = [];
@@ -23,40 +24,342 @@ let currentResponse = null;
 let baselineResponse = null;
 let debounceHandle = null;
 let scenarioFetchFailed = false;
+let svpwmAnimationTimer = null;
+let svpwmAnimationState = null;
+let svpwmAnimationPaused = false;
 
-const referenceModeHints = {
-  sinusoidal: "Sinusoidal Reference: 基本的な SPWM 系の基準波です。",
-  third_harmonic: "Third Harmonic Injection: 零相成分で線形変調範囲を拡張します。",
-  minmax: "Min-Max Zero-Sequence: carrier-based な SVPWM 相当の基準波です。",
+const SVPWM_ANIMATION_BASE_INTERVAL_MS = 40;
+
+const modulationModeHints = {
+  carrier: "三角波比較: 正弦波基準をキャリアと比較する基本方式です。",
+  carrier_third_harmonic: "三角波比較(三倍高調波): 零相三倍高調波を加えて線形変調範囲を広げます。",
+  carrier_two_phase: "三角波比較(二相変調): 三角波比較ベースで60度クランプを入れる不連続変調です。",
+  space_vector: "空間ベクトル: Min-Max 零相注入による連続 SVPWM 相当です。",
+  space_vector_two_phase: "空間ベクトル(二相変調): 空間ベクトルベースで60度クランプを入れる不連続変調です。",
 };
 
-const clampModeHints = {
-  continuous: "Continuous PWM: 全相が連続的にスイッチングします。",
-  dpwm1: "DPWM1: 山頂・谷底付近で60度クランプします。",
-  dpwm2: "DPWM2: DPWM1 と相補の位置で60度クランプします。",
-  dpwm3: "DPWM3: 山頂の両脇でクランプし、M字型寄りの波形になります。",
-};
+const SQRT3 = Math.sqrt(3.0);
 
-function buildModulationHint(referenceMode, samplingMode, clampMode) {
-  const standardName = (
-    referenceMode === "sinusoidal" && samplingMode === "natural" && clampMode === "continuous"
-  )
-    ? "標準組み合わせ: SPWM。"
-    : (
-      referenceMode === "sinusoidal" && samplingMode === "regular" && clampMode === "continuous"
-    )
-      ? "標準組み合わせ: Regular-sampled SPWM。"
-      : (
-        referenceMode === "third_harmonic" && clampMode === "continuous"
-      )
-        ? "標準組み合わせ: THIPWM。"
-        : (
-          referenceMode === "minmax" && clampMode === "continuous"
-        )
-          ? "標準組み合わせ: Continuous SVPWM。"
-          : "詳細組み合わせ: 3軸を独立に指定しています。";
+function buildModulationHint(modulationMode) {
+  return `${modulationModeHints[modulationMode]} サンプリング方式は Natural 固定です。`;
+}
 
-  return `${standardName} ${referenceModeHints[referenceMode]} ${clampModeHints[clampMode]} サンプリング方式は ${samplingMode === "natural" ? "Natural" : "Regular"} です.`;
+function isSpaceVectorMode(modulationMode) {
+  return modulationMode === "space_vector" || modulationMode === "space_vector_two_phase";
+}
+
+function toAlphaBeta(u, v, w) {
+  const alpha = (2.0 / 3.0) * (u - 0.5 * v - 0.5 * w);
+  const beta = (2.0 / 3.0) * ((SQRT3 / 2.0) * (v - w));
+  return { alpha, beta };
+}
+
+function inferTwoPhaseZeroVector(u, v, w) {
+  const maxRef = Math.max(u, v, w);
+  const minRef = Math.min(u, v, w);
+  const distToPos = Math.abs(1.0 - maxRef);
+  const distToNeg = Math.abs(-1.0 - minRef);
+  return distToPos <= distToNeg ? "V7" : "V0";
+}
+
+function buildSvpwmWindowFromAlphaBeta(alphaNow, betaNow, switchingPeriod, zeroVector = null) {
+  const angleRaw = Math.atan2(betaNow, alphaNow);
+  const angle = angleRaw >= 0 ? angleRaw : angleRaw + 2.0 * Math.PI;
+  const sector = Math.floor(angle / (Math.PI / 3.0)) + 1;
+  const thetaInSector = angle - (sector - 1) * (Math.PI / 3.0);
+  const modulationMag = Math.hypot(alphaNow, betaNow);
+
+  const gain = SQRT3 * modulationMag;
+  const t1Raw = switchingPeriod * gain * Math.sin(Math.PI / 3.0 - thetaInSector);
+  const t2Raw = switchingPeriod * gain * Math.sin(thetaInSector);
+  const t1 = Math.max(0.0, Math.min(switchingPeriod, t1Raw));
+  const t2 = Math.max(0.0, Math.min(switchingPeriod - t1, t2Raw));
+  const t0 = Math.max(0.0, switchingPeriod - t1 - t2);
+
+  const firstVector = `V${sector}`;
+  const secondVector = `V${(sector % 6) + 1}`;
+  const useSingleZeroVector = zeroVector === "V0" || zeroVector === "V7";
+  const primaryZeroLabel = zeroVector === "V7" ? "V7" : "V0";
+  const sequenceStates = useSingleZeroVector
+    ? [
+      primaryZeroLabel,
+      firstVector,
+      secondVector,
+      primaryZeroLabel,
+      secondVector,
+      firstVector,
+      primaryZeroLabel,
+    ]
+    : [
+      "V0",
+      firstVector,
+      secondVector,
+      "V7",
+      secondVector,
+      firstVector,
+      "V0",
+    ];
+
+  const t0Half = 0.5 * t0;
+  const segmentDurations = [
+    0.5 * t0Half,
+    0.5 * t1,
+    0.5 * t2,
+    t0Half,
+    0.5 * t2,
+    0.5 * t1,
+    0.5 * t0Half,
+  ];
+  const eventTimes = [0.0];
+  for (let i = 0; i < segmentDurations.length; i += 1) {
+    eventTimes.push(eventTimes[i] + segmentDurations[i]);
+  }
+
+  return {
+    alphaNow,
+    betaNow,
+    sector,
+    thetaInSector,
+    t1,
+    t2,
+    t0,
+    switchingPeriod,
+    sequenceStates,
+    sequence: sequenceStates.join(" -> "),
+    event_times_rel_s: eventTimes,
+  };
+}
+
+function computeSvpwmSnapshot(data) {
+  const u = data.reference.u;
+  const v = data.reference.v;
+  const w = data.reference.w;
+  const isTwoPhaseSvpwm = data.meta.modulation_mode === "space_vector_two_phase";
+  const n = Math.min(u.length, v.length, w.length);
+  if (n === 0) {
+    return null;
+  }
+
+  const alpha = new Array(n);
+  const beta = new Array(n);
+  for (let i = 0; i < n; i += 1) {
+    const clarke = toAlphaBeta(u[i], v[i], w[i]);
+    alpha[i] = clarke.alpha;
+    beta[i] = clarke.beta;
+  }
+
+  const snapshotIndex = n - 1;
+  const switchingPeriod = 1.0 / data.params.f_c;
+  const alphaNow = alpha[snapshotIndex];
+  const betaNow = beta[snapshotIndex];
+  const zeroVector = isTwoPhaseSvpwm
+    ? inferTwoPhaseZeroVector(u[snapshotIndex], v[snapshotIndex], w[snapshotIndex])
+    : null;
+  const windowNow = buildSvpwmWindowFromAlphaBeta(alphaNow, betaNow, switchingPeriod, zeroVector);
+
+  return {
+    alpha,
+    beta,
+    ...windowNow,
+  };
+}
+
+function buildSvpwmPatternStep(signalStates, eventTimesRelS, stateLabel) {
+  const xUs = [];
+  const y = [];
+  for (let i = 0; i < signalStates.length; i += 1) {
+    const startUs = eventTimesRelS[i] * 1.0e6;
+    const endUs = eventTimesRelS[i + 1] * 1.0e6;
+    const active = signalStates[i] === stateLabel ? 1.0 : 0.0;
+    xUs.push(startUs, endUs);
+    y.push(active, active);
+  }
+  return { xUs, y };
+}
+
+function normalizeSvpwmPatternEventTimes(svpwmSnapshot, sequenceLength) {
+  const raw = Array.isArray(svpwmSnapshot.event_times_rel_s)
+    ? svpwmSnapshot.event_times_rel_s
+    : [];
+  if (raw.length === sequenceLength + 1) {
+    return raw;
+  }
+
+  if (
+    Number.isFinite(svpwmSnapshot.t0)
+    && Number.isFinite(svpwmSnapshot.t1)
+    && Number.isFinite(svpwmSnapshot.t2)
+  ) {
+    const t0Half = 0.5 * svpwmSnapshot.t0;
+    const segmentDurations = [
+      0.5 * t0Half,
+      0.5 * svpwmSnapshot.t1,
+      0.5 * svpwmSnapshot.t2,
+      t0Half,
+      0.5 * svpwmSnapshot.t2,
+      0.5 * svpwmSnapshot.t1,
+      0.5 * t0Half,
+    ];
+    const recovered = [0.0];
+    for (let i = 0; i < segmentDurations.length; i += 1) {
+      recovered.push(recovered[i] + segmentDurations[i]);
+    }
+    return recovered;
+  }
+
+  return raw;
+}
+
+function renderSvpwmPatternPlot(svpwmSnapshot, cursorRelS = null) {
+  const sequenceStates = svpwmSnapshot.sequenceStates || [];
+  const eventTimesRelS = normalizeSvpwmPatternEventTimes(svpwmSnapshot, sequenceStates.length);
+  if (sequenceStates.length === 0 || eventTimesRelS.length !== sequenceStates.length + 1) {
+    Plotly.react("svpwmPatternPlot", [], {
+      ...plotTheme,
+      title: "1キャリア周期ベクトル時系列",
+      xaxis: { ...plotTheme.xaxis, title: "時間 [us]" },
+      yaxis: { ...plotTheme.yaxis, visible: false },
+      annotations: [
+        {
+          text: "時系列データなし",
+          showarrow: false,
+          xref: "paper",
+          yref: "paper",
+          x: 0.5,
+          y: 0.5,
+          font: { size: 14, color: "#5b6468" },
+        },
+      ],
+    }, { responsive: true, displayModeBar: false });
+    return;
+  }
+
+  const activeVectors = sequenceStates.filter((label) => label !== "V0" && label !== "V7");
+  const aVector = activeVectors[0] || "V?";
+  const bVector = activeVectors.find((label) => label !== aVector) || "V?";
+  const mappedStates = sequenceStates.map((label) => {
+    if (label === "V0") {
+      return "v0";
+    }
+    if (label === "V7") {
+      return "v7";
+    }
+    if (label === aVector) {
+      return "a";
+    }
+    if (label === bVector) {
+      return "b";
+    }
+    return "v0";
+  });
+
+  const aSeries = buildSvpwmPatternStep(mappedStates, eventTimesRelS, "a");
+  const bSeries = buildSvpwmPatternStep(mappedStates, eventTimesRelS, "b");
+  const v0Series = buildSvpwmPatternStep(mappedStates, eventTimesRelS, "v0");
+  const v7Series = buildSvpwmPatternStep(mappedStates, eventTimesRelS, "v7");
+
+  const periodS = Number.isFinite(svpwmSnapshot.switchingPeriod)
+    ? svpwmSnapshot.switchingPeriod
+    : eventTimesRelS[eventTimesRelS.length - 1];
+  let cursorUs = null;
+  if (Number.isFinite(cursorRelS) && Number.isFinite(periodS) && periodS > 0.0) {
+    const wrapped = ((cursorRelS % periodS) + periodS) % periodS;
+    cursorUs = wrapped * 1.0e6;
+  }
+
+  Plotly.react("svpwmPatternPlot", [
+    {
+      x: aSeries.xUs,
+      y: aSeries.y,
+      name: `a vector (${aVector})`,
+      mode: "lines",
+      line: { color: "#c14f2c", width: 2.4, shape: "hv" },
+      fill: "tozeroy",
+      opacity: 0.5,
+    },
+    {
+      x: bSeries.xUs,
+      y: bSeries.y,
+      name: `b vector (${bVector})`,
+      mode: "lines",
+      line: { color: "#4e7a76", width: 2.4, shape: "hv" },
+      fill: "tozeroy",
+      opacity: 0.5,
+    },
+    {
+      x: v0Series.xUs,
+      y: v0Series.y,
+      name: "0 vector (V0)",
+      mode: "lines",
+      line: { color: "#182126", width: 2.0, shape: "hv", dash: "dot" },
+    },
+    {
+      x: v7Series.xUs,
+      y: v7Series.y,
+      name: "7 vector (V7)",
+      mode: "lines",
+      line: { color: "#6a5495", width: 2.0, shape: "hv", dash: "dash" },
+    },
+  ], {
+    ...plotTheme,
+    title: {
+      text: `1キャリア周期: a / b / V0 / V7 ベクトル時系列 (Sector ${svpwmSnapshot.sector})`,
+      x: 0.02,
+      xanchor: "left",
+      font: { size: 14 },
+    },
+    margin: { ...plotTheme.margin, t: 88 },
+    legend: {
+      orientation: "h",
+      x: 0,
+      y: 1.02,
+      yanchor: "bottom",
+      font: { size: 10 },
+    },
+    xaxis: { ...plotTheme.xaxis, title: "時間 [us]" },
+    yaxis: {
+      ...plotTheme.yaxis,
+      title: "active",
+      range: [-0.05, 1.05],
+      tickvals: [0, 1],
+      ticktext: ["0", "1"],
+    },
+    shapes: cursorUs === null
+      ? []
+      : [
+        {
+          type: "line",
+          x0: cursorUs,
+          x1: cursorUs,
+          y0: 0.0,
+          y1: 1.0,
+          line: { color: "rgba(24,33,38,0.9)", width: 2 },
+        },
+      ],
+  }, { responsive: true, displayModeBar: false });
+}
+
+function updateSection1Header(data, svpwmSnapshot) {
+  const title = document.getElementById("section1Title");
+  const refToggles = document.getElementById("section1ReferenceToggles");
+  const animationControls = document.getElementById("section1AnimationControls");
+  const svInfo = document.getElementById("section1SvpwmInfo");
+  const inSpaceVectorMode = isSpaceVectorMode(data.meta.modulation_mode);
+
+  if (!inSpaceVectorMode || !svpwmSnapshot) {
+    title.textContent = "変調信号 + キャリア";
+    refToggles.hidden = false;
+    animationControls.hidden = true;
+    svInfo.hidden = true;
+    svInfo.innerHTML = "";
+    return;
+  }
+
+  title.textContent = "空間ベクトル: セクタと1キャリア合成";
+  refToggles.hidden = true;
+  animationControls.hidden = false;
+  svInfo.hidden = true;
+  svInfo.innerHTML = "";
 }
 
 const controlDefinitions = [
@@ -113,15 +416,198 @@ function setStatus(badgeText, message, isError = false) {
   badge.style.color = isError ? "#c14f2c" : "#4e7a76";
 }
 
+function stopSvpwmVectorAnimation() {
+  if (svpwmAnimationTimer !== null) {
+    window.clearInterval(svpwmAnimationTimer);
+    svpwmAnimationTimer = null;
+  }
+  svpwmAnimationState = null;
+  svpwmAnimationPaused = false;
+  updateSvpwmAnimationPlayPauseLabel();
+}
+
+function updateSvpwmAnimationPlayPauseLabel() {
+  const button = document.getElementById("section1AnimPlayPause");
+  if (!button) {
+    return;
+  }
+  button.textContent = svpwmAnimationPaused ? "再生" : "停止";
+}
+
+function getSvpwmAnimationSpeed() {
+  const speedControl = document.getElementById("section1AnimSpeed");
+  const speed = Number(speedControl ? speedControl.value : 1.0);
+  if (!Number.isFinite(speed) || speed <= 0.0) {
+    return 1.0;
+  }
+  return speed;
+}
+
+function getSvpwmAnimationIntervalMs() {
+  return Math.max(10, Math.round(SVPWM_ANIMATION_BASE_INTERVAL_MS / getSvpwmAnimationSpeed()));
+}
+
+function applySvpwmAnimationFrame(pointIndex) {
+  if (!svpwmAnimationState) {
+    return;
+  }
+
+  const {
+    plotId,
+    alphaSeries,
+    betaSeries,
+    trailTraceIndex,
+    headTraceIndex,
+    onFrame,
+    windows,
+  } = svpwmAnimationState;
+
+  if (windows && windows.length > 0) {
+    const windowCount = windows.length;
+    const wrappedIndex = ((pointIndex % windowCount) + windowCount) % windowCount;
+    svpwmAnimationState.cursor = wrappedIndex;
+    const window = windows[wrappedIndex];
+    const trailX = [];
+    const trailY = [];
+    for (let i = 0; i <= wrappedIndex; i += 1) {
+      trailX.push(windows[i].alpha);
+      trailY.push(windows[i].beta);
+    }
+    Plotly.restyle(plotId, { x: [trailX], y: [trailY] }, [trailTraceIndex]);
+    Plotly.restyle(
+      plotId,
+      { x: [[window.alpha]], y: [[window.beta]] },
+      [headTraceIndex],
+    );
+    if (typeof onFrame === "function") {
+      onFrame(wrappedIndex);
+    }
+  } else {
+    const n = Math.min(alphaSeries.length, betaSeries.length);
+    if (n < 1) {
+      return;
+    }
+    const wrappedIndex = ((pointIndex % n) + n) % n;
+    svpwmAnimationState.cursor = wrappedIndex;
+    const trailX = alphaSeries.slice(0, wrappedIndex + 1);
+    const trailY = betaSeries.slice(0, wrappedIndex + 1);
+    Plotly.restyle(plotId, { x: [trailX], y: [trailY] }, [trailTraceIndex]);
+    Plotly.restyle(
+      plotId,
+      { x: [[alphaSeries[wrappedIndex]]], y: [[betaSeries[wrappedIndex]]] },
+      [headTraceIndex],
+    );
+    if (typeof onFrame === "function") {
+      onFrame(wrappedIndex);
+    }
+  }
+}
+
+function startSvpwmAnimationTimer() {
+  if (!svpwmAnimationState || svpwmAnimationPaused) {
+    return;
+  }
+  if (svpwmAnimationTimer !== null) {
+    window.clearInterval(svpwmAnimationTimer);
+    svpwmAnimationTimer = null;
+  }
+  const intervalMs = getSvpwmAnimationIntervalMs();
+  svpwmAnimationTimer = window.setInterval(() => {
+    if (!svpwmAnimationState) {
+      return;
+    }
+    const step = svpwmAnimationState.windows ? 1 : svpwmAnimationState.stride;
+    applySvpwmAnimationFrame(svpwmAnimationState.cursor + step);
+  }, intervalMs);
+}
+
+function setSvpwmAnimationPaused(paused) {
+  svpwmAnimationPaused = paused;
+  updateSvpwmAnimationPlayPauseLabel();
+  if (svpwmAnimationTimer !== null) {
+    window.clearInterval(svpwmAnimationTimer);
+    svpwmAnimationTimer = null;
+  }
+  if (!svpwmAnimationPaused) {
+    startSvpwmAnimationTimer();
+  }
+}
+
+function stepSvpwmAnimation(delta) {
+  if (!svpwmAnimationState) {
+    return;
+  }
+  setSvpwmAnimationPaused(true);
+  applySvpwmAnimationFrame(svpwmAnimationState.cursor + delta);
+}
+
+function startSvpwmVectorAnimation(
+  plotId,
+  alphaSeries,
+  betaSeries,
+  trailTraceIndex,
+  headTraceIndex,
+  onFrame = null,
+  windows = null,
+) {
+  stopSvpwmVectorAnimation();
+
+  const n = windows ? windows.length : Math.min(alphaSeries.length, betaSeries.length);
+  if (n < 1) {
+    return;
+  }
+
+  svpwmAnimationState = {
+    plotId,
+    alphaSeries,
+    betaSeries,
+    trailTraceIndex,
+    headTraceIndex,
+    onFrame,
+    windows,
+    cursor: 0,
+    stride: windows ? 1 : Math.max(1, Math.floor(n / 80)),
+  };
+  svpwmAnimationPaused = false;
+  updateSvpwmAnimationPlayPauseLabel();
+  applySvpwmAnimationFrame(0);
+  startSvpwmAnimationTimer();
+}
+
+function getControlInputs(key) {
+  return {
+    slider: document.querySelector(`input[type="range"][data-key="${key}"]`),
+    number: document.querySelector(`input[type="number"][data-key="${key}"]`),
+  };
+}
+
+function parseControlValue(rawValue) {
+  const text = String(rawValue ?? "").trim();
+  if (text === "") {
+    return null;
+  }
+
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
+function isControlValueValid(definition, value) {
+  return value !== null && value >= definition.min && value <= definition.max;
+}
+
+function setControlValidity(key, isValid) {
+  const { number } = getControlInputs(key);
+  if (!number) {
+    return;
+  }
+
+  number.classList.toggle("input-invalid", !isValid);
+  number.setAttribute("aria-invalid", String(!isValid));
+}
+
 function updateModulationHint() {
-  const referenceMode = document.getElementById("referenceMode").value;
-  const samplingMode = document.getElementById("samplingMode").value;
-  const clampMode = document.getElementById("clampMode").value;
-  document.getElementById("modulationHint").textContent = buildModulationHint(
-    referenceMode,
-    samplingMode,
-    clampMode,
-  );
+  const modulationMode = document.getElementById("modulationMode").value;
+  document.getElementById("modulationHint").textContent = buildModulationHint(modulationMode);
 }
 
 function buildControlRow(definition) {
@@ -157,10 +643,19 @@ function buildControlRow(definition) {
 
   slider.addEventListener("input", () => {
     number.value = slider.value;
+    setControlValidity(definition.key, true);
     scheduleSimulation();
   });
   number.addEventListener("input", () => {
-    slider.value = number.value;
+    const parsedValue = parseControlValue(number.value);
+    const isValid = isControlValueValid(definition, parsedValue);
+
+    setControlValidity(definition.key, isValid);
+    if (!isValid) {
+      return;
+    }
+
+    slider.value = String(parsedValue);
     scheduleSimulation();
   });
 
@@ -175,8 +670,10 @@ function applyDisplayValues(values) {
     if (values[definition.key] === undefined) {
       return;
     }
-    document.querySelector(`input[type="range"][data-key="${definition.key}"]`).value = values[definition.key];
-    document.querySelector(`input[type="number"][data-key="${definition.key}"]`).value = values[definition.key];
+    const { slider, number } = getControlInputs(definition.key);
+    slider.value = values[definition.key];
+    number.value = values[definition.key];
+    setControlValidity(definition.key, true);
   });
 }
 
@@ -186,20 +683,21 @@ function initializeControls() {
     form.appendChild(buildControlRow(definition));
   });
 
-  document.getElementById("referenceMode").value = defaultDisplayValues.reference_mode;
-  document.getElementById("samplingMode").value = defaultDisplayValues.sampling_mode;
-  document.getElementById("clampMode").value = defaultDisplayValues.clamp_mode;
+  document.getElementById("modulationMode").value = defaultDisplayValues.modulation_mode;
   document.getElementById("overmodView").checked = defaultDisplayValues.overmod_view;
   document.getElementById("fftTarget").value = defaultDisplayValues.fft_target;
   document.getElementById("fftWindow").value = defaultDisplayValues.fft_window;
   document.getElementById("showURef").checked = defaultDisplayValues.show_u_ref;
   document.getElementById("showVRef").checked = defaultDisplayValues.show_v_ref;
   document.getElementById("showWRef").checked = defaultDisplayValues.show_w_ref;
+  document.getElementById("showLineVuv").checked = defaultDisplayValues.show_line_v_uv;
+  document.getElementById("showLineVvw").checked = defaultDisplayValues.show_line_v_vw;
+  document.getElementById("showLineVwu").checked = defaultDisplayValues.show_line_v_wu;
   updateModulationHint();
 
-  ["referenceMode", "samplingMode", "clampMode", "overmodView", "fftTarget", "fftWindow"].forEach((id) => {
+  ["modulationMode", "overmodView", "fftTarget", "fftWindow"].forEach((id) => {
     document.getElementById(id).addEventListener("change", () => {
-      if (id === "referenceMode" || id === "samplingMode" || id === "clampMode") {
+      if (id === "modulationMode") {
         updateModulationHint();
       }
       scheduleSimulation();
@@ -212,18 +710,26 @@ function initializeControls() {
       }
     });
   });
+  ["showLineVuv", "showLineVvw", "showLineVwu"].forEach((id) => {
+    document.getElementById(id).addEventListener("change", () => {
+      if (currentResponse) {
+        renderPlots(currentResponse);
+      }
+    });
+  });
 
   document.getElementById("resetButton").addEventListener("click", () => {
     applyDisplayValues(defaultDisplayValues);
-    document.getElementById("referenceMode").value = defaultDisplayValues.reference_mode;
-    document.getElementById("samplingMode").value = defaultDisplayValues.sampling_mode;
-    document.getElementById("clampMode").value = defaultDisplayValues.clamp_mode;
+    document.getElementById("modulationMode").value = defaultDisplayValues.modulation_mode;
     document.getElementById("overmodView").checked = defaultDisplayValues.overmod_view;
     document.getElementById("fftTarget").value = defaultDisplayValues.fft_target;
     document.getElementById("fftWindow").value = defaultDisplayValues.fft_window;
     document.getElementById("showURef").checked = defaultDisplayValues.show_u_ref;
     document.getElementById("showVRef").checked = defaultDisplayValues.show_v_ref;
     document.getElementById("showWRef").checked = defaultDisplayValues.show_w_ref;
+    document.getElementById("showLineVuv").checked = defaultDisplayValues.show_line_v_uv;
+    document.getElementById("showLineVvw").checked = defaultDisplayValues.show_line_v_vw;
+    document.getElementById("showLineVwu").checked = defaultDisplayValues.show_line_v_wu;
     updateModulationHint();
     renderScenarioGuide();
     scheduleSimulation();
@@ -237,16 +743,31 @@ function initializeControls() {
 
 function collectDisplayValues() {
   const values = {};
+  let hasInvalidValue = false;
+
   controlDefinitions.forEach((definition) => {
-    values[definition.key] = Number(
-      document.querySelector(`input[type="number"][data-key="${definition.key}"]`).value,
-    );
+    const { number } = getControlInputs(definition.key);
+    const parsedValue = parseControlValue(number.value);
+    const isValid = isControlValueValid(definition, parsedValue);
+
+    setControlValidity(definition.key, isValid);
+    if (!isValid) {
+      hasInvalidValue = true;
+      return;
+    }
+
+    values[definition.key] = parsedValue;
   });
-  return values;
+
+  return hasInvalidValue ? null : values;
 }
 
 function collectPayload() {
   const values = collectDisplayValues();
+  if (!values) {
+    return null;
+  }
+
   return {
     V_dc: values.V_dc,
     V_ll_rms: values.V_ll_rms,
@@ -256,9 +777,7 @@ function collectPayload() {
     V_on: values.V_on,
     R: values.R,
     L: values.L_mh / 1000.0,
-    reference_mode: document.getElementById("referenceMode").value,
-    sampling_mode: document.getElementById("samplingMode").value,
-    clamp_mode: document.getElementById("clampMode").value,
+    modulation_mode: document.getElementById("modulationMode").value,
     overmod_view: document.getElementById("overmodView").checked,
     fft_target: document.getElementById("fftTarget").value,
     fft_window: document.getElementById("fftWindow").value,
@@ -378,9 +897,7 @@ function applyScenario(index) {
     R: scenario.sliders.R,
     L_mh: scenario.sliders.L,
   });
-  document.getElementById("referenceMode").value = scenario.reference_mode;
-  document.getElementById("samplingMode").value = scenario.sampling_mode;
-  document.getElementById("clampMode").value = scenario.clamp_mode;
+  document.getElementById("modulationMode").value = scenario.modulation_mode;
   document.getElementById("overmodView").checked = Boolean(scenario.overmod_view);
   updateModulationHint();
   document.getElementById("fftTarget").value = scenario.fft_target === "current" ? "i_u" : "v_uv";
@@ -390,90 +907,490 @@ function applyScenario(index) {
 }
 
 function renderPlots(data) {
+  stopSvpwmVectorAnimation();
+  const svpwmPatternCard = document.getElementById("svpwmPatternCard");
+  const section1PlotGrid = document.getElementById("section1PlotGrid");
+
+  function setSection1SplitLayout(enabled) {
+    if (!section1PlotGrid) {
+      return;
+    }
+    section1PlotGrid.classList.toggle("two-up", enabled);
+    section1PlotGrid.classList.toggle("section1-single", !enabled);
+  }
+
+  function syncSection1PlotSizes(includePatternPlot) {
+    if (!Plotly || !Plotly.Plots || typeof Plotly.Plots.resize !== "function") {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const referencePlotElement = document.getElementById("referencePlot");
+        if (referencePlotElement) {
+          Plotly.Plots.resize(referencePlotElement);
+        }
+        if (includePatternPlot) {
+          const patternPlotElement = document.getElementById("svpwmPatternPlot");
+          if (patternPlotElement) {
+            Plotly.Plots.resize(patternPlotElement);
+          }
+        }
+      });
+    });
+  }
+
   const timeMs = data.time.map((value) => value * 1000.0);
   const carrierPlot = data.carrier_plot || null;
   const carrierTimeMs = carrierPlot
     ? carrierPlot.time.map((value) => value * 1000.0)
     : timeMs;
   const carrierWaveform = carrierPlot ? carrierPlot.waveform : data.carrier;
+  const switchingPlot = data.switching_plot || {
+    time: data.time,
+    u: data.switching.u,
+    v: data.switching.v,
+    w: data.switching.w,
+  };
+  const switchingTimeMs = switchingPlot.time.map((value) => value * 1000.0);
+  const lineVoltagePlot = data.line_voltage_plot || {
+    time: data.time,
+    v_uv: data.voltages.v_uv,
+    v_vw: data.voltages.v_vw,
+    v_wu: data.voltages.v_wu,
+    v_uv_fund: data.voltages.v_uv_fund,
+  };
+  const lineVoltageTimeMs = lineVoltagePlot.time.map((value) => value * 1000.0);
+  const phaseVoltagePlot = data.phase_voltage_plot || {
+    time: data.time,
+    v_uN: data.voltages.v_uN,
+    v_uN_fund: data.voltages.v_uN_fund,
+  };
+  const phaseVoltageTimeMs = phaseVoltagePlot.time.map((value) => value * 1000.0);
 
   const showURef = document.getElementById("showURef").checked;
   const showVRef = document.getElementById("showVRef").checked;
   const showWRef = document.getElementById("showWRef").checked;
-  const referenceTraces = [];
+  const showLineVuv = document.getElementById("showLineVuv").checked;
+  const showLineVvw = document.getElementById("showLineVvw").checked;
+  const showLineVwu = document.getElementById("showLineVwu").checked;
+  const inSpaceVectorMode = isSpaceVectorMode(data.meta.modulation_mode);
+  const observer = data.svpwm_observer || null;
+  const observerEnabled = Boolean(inSpaceVectorMode && observer && observer.enabled);
+  let svpwmSnapshot = null;
+  if (observerEnabled && observer.windows && observer.windows.length > 0) {
+    const activeWindow = observer.windows[observer.windows.length - 1];
+    svpwmSnapshot = {
+      alpha: observer.alpha,
+      beta: observer.beta,
+      alphaNow: activeWindow.alpha,
+      betaNow: activeWindow.beta,
+      sector: activeWindow.sector,
+      thetaInSector: activeWindow.theta_in_sector,
+      switchingPeriod: observer.switching_period_s,
+      t1: activeWindow.t1,
+      t2: activeWindow.t2,
+      t0: activeWindow.t0,
+      sequenceStates: activeWindow.sequence,
+      sequence: activeWindow.sequence.join(" -> "),
+      event_times_rel_s: activeWindow.event_times_rel_s,
+      windowIndex: activeWindow.window_index,
+      windowStartS: activeWindow.start_s,
+      windowEndS: activeWindow.end_s,
+      holdAlpha: observer.carrier_hold.alpha,
+      holdBeta: observer.carrier_hold.beta,
+    };
+  } else if (inSpaceVectorMode) {
+    svpwmSnapshot = computeSvpwmSnapshot(data);
+    if (svpwmSnapshot) {
+      const halfT0 = Math.max(0.0, svpwmSnapshot.t0 * 0.5);
+      const segmentDurations = [
+        halfT0 * 0.5,
+        svpwmSnapshot.t1 * 0.5,
+        svpwmSnapshot.t2 * 0.5,
+        halfT0,
+        svpwmSnapshot.t2 * 0.5,
+        svpwmSnapshot.t1 * 0.5,
+        halfT0 * 0.5,
+      ];
+      const eventTimes = [0.0];
+      for (let i = 0; i < segmentDurations.length; i += 1) {
+        eventTimes.push(eventTimes[i] + segmentDurations[i]);
+      }
+      svpwmSnapshot.event_times_rel_s = eventTimes;
+      svpwmSnapshot.windowIndex = -1;
+      svpwmSnapshot.windowStartS = null;
+      svpwmSnapshot.windowEndS = null;
+      svpwmSnapshot.holdAlpha = [];
+      svpwmSnapshot.holdBeta = [];
+    }
+  }
+  updateSection1Header(data, svpwmSnapshot);
 
-  if (showURef) {
-    referenceTraces.push({
-      x: timeMs,
-      y: data.reference.u,
-      name: "u ref",
-      line: { color: "#c14f2c", width: 2 },
-    });
-  }
-  if (showVRef) {
-    referenceTraces.push({
-      x: timeMs,
-      y: data.reference.v,
-      name: "v ref",
-      line: { color: "#4e7a76", width: 2 },
-    });
-  }
-  if (showWRef) {
-    referenceTraces.push({
-      x: timeMs,
-      y: data.reference.w,
-      name: "w ref",
-      line: { color: "#6a5495", width: 2 },
-    });
-  }
-  referenceTraces.push({
-    x: carrierTimeMs,
-    y: carrierWaveform,
-    name: "carrier",
-    line: { color: "#2d3748", width: 1.2, dash: "dot" },
-  });
+  if (inSpaceVectorMode && svpwmSnapshot) {
+    setSection1SplitLayout(true);
+    svpwmPatternCard.hidden = false;
+    const periodS = 1.0 / data.params.f;
+    const endTimeS = data.time[data.time.length - 1];
+    const startTimeS = Math.max(data.time[0], endTimeS - periodS);
+    const oneCycleMask = data.time.map((timeValue) => timeValue >= startTimeS);
+    const oneCycleTime = data.time.filter((timeValue) => timeValue >= startTimeS);
+    const alphaOneCycle = svpwmSnapshot.alpha.filter((_, index) => oneCycleMask[index]);
+    const betaOneCycle = svpwmSnapshot.beta.filter((_, index) => oneCycleMask[index]);
+    const uOneCycle = data.reference.u.filter((_, index) => oneCycleMask[index]);
+    const vOneCycle = data.reference.v.filter((_, index) => oneCycleMask[index]);
+    const wOneCycle = data.reference.w.filter((_, index) => oneCycleMask[index]);
+    const isTwoPhaseSvpwm = data.meta.modulation_mode === "space_vector_two_phase";
 
-  Plotly.react("referencePlot", referenceTraces, {
+    let holdAlphaOneCycle = svpwmSnapshot.holdAlpha;
+    let holdBetaOneCycle = svpwmSnapshot.holdBeta;
+    if (observerEnabled && observer && observer.carrier_hold && observer.carrier_hold.time) {
+      const holdMask = observer.carrier_hold.time.map((timeValue) => timeValue >= startTimeS);
+      holdAlphaOneCycle = svpwmSnapshot.holdAlpha.filter((_, index) => holdMask[index]);
+      holdBetaOneCycle = svpwmSnapshot.holdBeta.filter((_, index) => holdMask[index]);
+    }
+
+    const radialBoundAuto = Math.max(
+      0.6,
+      Math.max(...alphaOneCycle.map(Math.abs)),
+      Math.max(...betaOneCycle.map(Math.abs)),
+    ) * 1.2;
+    const radialBound = Math.max(1.1, radialBoundAuto);
+    const alphaMin = Math.min(...alphaOneCycle);
+    const alphaMax = Math.max(...alphaOneCycle);
+    const betaMin = Math.min(...betaOneCycle);
+    const betaMax = Math.max(...betaOneCycle);
+    const centerAlpha = 0.5 * (alphaMin + alphaMax);
+    const centerBeta = 0.5 * (betaMin + betaMax);
+    const halfSpan = Math.max(
+      0.55,
+      1.15 * Math.max(
+        Math.max(Math.abs(alphaMin - centerAlpha), Math.abs(alphaMax - centerAlpha)),
+        Math.max(Math.abs(betaMin - centerBeta), Math.abs(betaMax - centerBeta)),
+      ),
+    );
+    const vectorTraces = [];
+    for (let k = 0; k < 6; k += 1) {
+      const angle = k * Math.PI / 3.0;
+      vectorTraces.push({
+        x: [0.0, radialBound * Math.cos(angle)],
+        y: [0.0, radialBound * Math.sin(angle)],
+        mode: "lines",
+        name: `V${k + 1}`,
+        showlegend: false,
+        line: { color: "rgba(24,33,38,0.25)", width: 1, dash: "dot" },
+        hoverinfo: "skip",
+      });
+    }
+
+    const maOneAngles = Array.from({ length: 181 }, (_, index) => (2.0 * Math.PI * index) / 180.0);
+    vectorTraces.push({
+      x: maOneAngles.map((angle) => Math.cos(angle)),
+      y: maOneAngles.map((angle) => Math.sin(angle)),
+      mode: "lines",
+      name: "m_a = 1.0",
+      showlegend: false,
+      line: { color: "rgba(24,33,38,0.45)", width: 1.6, dash: "dash" },
+      hovertemplate: "m_a=1.0 boundary<extra></extra>",
+    });
+
+    vectorTraces.push({
+      x: alphaOneCycle,
+      y: betaOneCycle,
+      mode: "lines",
+      name: "v_ref trajectory (last 1 cycle)",
+      line: { color: "#4e7a76", width: 2.2 },
+    });
+    if (holdAlphaOneCycle.length > 0 && holdBetaOneCycle.length > 0) {
+      vectorTraces.push({
+        x: holdAlphaOneCycle,
+        y: holdBetaOneCycle,
+        mode: "markers",
+        name: "carrier boundary samples",
+        showlegend: false,
+        marker: { color: "#182126", size: 5, opacity: 0.45 },
+      });
+    }
+    const trailTraceIndex = vectorTraces.length;
+    vectorTraces.push({
+      x: [alphaOneCycle[0]],
+      y: [betaOneCycle[0]],
+      mode: "lines",
+      name: "animated trajectory",
+      line: { color: "#c14f2c", width: 2.2 },
+      opacity: 0.95,
+    });
+    const headTraceIndex = vectorTraces.length;
+    vectorTraces.push({
+      x: [alphaOneCycle[0]],
+      y: [betaOneCycle[0]],
+      mode: "markers",
+      name: "animated head",
+      showlegend: false,
+      marker: { color: "#c14f2c", size: 10 },
+      hovertemplate: `alpha=%{x:.3f}<br>beta=%{y:.3f}<br>sector=${svpwmSnapshot.sector}<extra></extra>`,
+    });
+
+    Plotly.react("referencePlot", vectorTraces, {
+      ...plotTheme,
+      title: {
+        text: "αβ平面ベクトル図（電圧指令1周期）",
+        x: 0.02,
+        xanchor: "left",
+        yanchor: "top",
+        font: { size: 14 },
+      },
+      margin: { ...plotTheme.margin, t: 92, b: 56 },
+      legend: {
+        orientation: "h",
+        x: 0,
+        y: 1.02,
+        yanchor: "bottom",
+        font: { size: 10 },
+      },
+      xaxis: {
+        ...plotTheme.xaxis,
+        title: "alpha [p.u.]",
+        range: [centerAlpha - halfSpan, centerAlpha + halfSpan],
+        zeroline: true,
+        automargin: true,
+      },
+      yaxis: {
+        ...plotTheme.yaxis,
+        title: "beta [p.u.]",
+        range: [centerBeta - halfSpan, centerBeta + halfSpan],
+        scaleanchor: "x",
+        scaleratio: 1,
+        zeroline: true,
+        automargin: true,
+      },
+    }, { responsive: true, displayModeBar: false });
+
+    const windowsToAnimate = observerEnabled && observer && observer.windows ? observer.windows : null;
+    startSvpwmVectorAnimation(
+      "referencePlot",
+      alphaOneCycle,
+      betaOneCycle,
+      trailTraceIndex,
+      headTraceIndex,
+      (pointIndex) => {
+        if (windowsToAnimate && windowsToAnimate[pointIndex]) {
+          const window = windowsToAnimate[pointIndex];
+          const windowSnapshot = {
+            alphaNow: window.alpha,
+            betaNow: window.beta,
+            sector: window.sector,
+            thetaInSector: window.theta_in_sector,
+            t1: window.t1,
+            t2: window.t2,
+            t0: window.t0,
+            switchingPeriod: svpwmSnapshot.switchingPeriod,
+            sequenceStates: Array.isArray(window.sequence) ? window.sequence : [],
+            event_times_rel_s: Array.isArray(window.event_times_rel_s) ? window.event_times_rel_s : [],
+          };
+          renderSvpwmPatternPlot(windowSnapshot, 0.0);
+        } else if (alphaOneCycle[pointIndex] !== undefined && betaOneCycle[pointIndex] !== undefined) {
+          const zeroVector = isTwoPhaseSvpwm
+            ? inferTwoPhaseZeroVector(uOneCycle[pointIndex], vOneCycle[pointIndex], wOneCycle[pointIndex])
+            : null;
+          const dynamicSnapshot = buildSvpwmWindowFromAlphaBeta(
+            alphaOneCycle[pointIndex],
+            betaOneCycle[pointIndex],
+            svpwmSnapshot.switchingPeriod,
+            zeroVector,
+          );
+          renderSvpwmPatternPlot(dynamicSnapshot, 0.0);
+        }
+      },
+      windowsToAnimate,
+    );
+    const initialWindow = windowsToAnimate && windowsToAnimate[0] ? windowsToAnimate[0] : null;
+    if (initialWindow) {
+      const initialWindowSnapshot = {
+        alphaNow: initialWindow.alpha,
+        betaNow: initialWindow.beta,
+        sector: initialWindow.sector,
+        thetaInSector: initialWindow.theta_in_sector,
+        t1: initialWindow.t1,
+        t2: initialWindow.t2,
+        t0: initialWindow.t0,
+        switchingPeriod: svpwmSnapshot.switchingPeriod,
+        sequenceStates: Array.isArray(initialWindow.sequence) ? initialWindow.sequence : [],
+        event_times_rel_s: Array.isArray(initialWindow.event_times_rel_s) ? initialWindow.event_times_rel_s : [],
+      };
+      renderSvpwmPatternPlot(initialWindowSnapshot, 0.0);
+    } else {
+      const zeroVector = isTwoPhaseSvpwm
+        ? inferTwoPhaseZeroVector(uOneCycle[0], vOneCycle[0], wOneCycle[0])
+        : null;
+      const initialSnapshot = buildSvpwmWindowFromAlphaBeta(
+        alphaOneCycle[0],
+        betaOneCycle[0],
+        svpwmSnapshot.switchingPeriod,
+        zeroVector,
+      );
+      renderSvpwmPatternPlot(initialSnapshot, 0.0);
+    }
+    syncSection1PlotSizes(true);
+  } else {
+    setSection1SplitLayout(false);
+    svpwmPatternCard.hidden = true;
+    const referenceTraces = [];
+
+    if (showURef) {
+      referenceTraces.push({
+        x: timeMs,
+        y: data.reference.u,
+        name: "u ref",
+        line: { color: "#c14f2c", width: 2 },
+      });
+    }
+    if (showVRef) {
+      referenceTraces.push({
+        x: timeMs,
+        y: data.reference.v,
+        name: "v ref",
+        line: { color: "#4e7a76", width: 2 },
+      });
+    }
+    if (showWRef) {
+      referenceTraces.push({
+        x: timeMs,
+        y: data.reference.w,
+        name: "w ref",
+        line: { color: "#6a5495", width: 2 },
+      });
+    }
+    referenceTraces.push({
+      x: carrierTimeMs,
+      y: carrierWaveform,
+      name: "carrier",
+      line: { color: "#2d3748", width: 1.2, dash: "dot" },
+    });
+
+    Plotly.react("referencePlot", referenceTraces, {
+      ...plotTheme,
+      title: "変調信号とキャリア",
+      xaxis: { ...plotTheme.xaxis, title: "時間 [ms]" },
+      yaxis: { ...plotTheme.yaxis, title: "正規化振幅" },
+    }, { responsive: true, displayModeBar: false });
+    syncSection1PlotSizes(false);
+    Plotly.purge("svpwmPatternPlot");
+  }
+
+  Plotly.react("switchingPlot", [
+    {
+      x: switchingTimeMs,
+      y: switchingPlot.u.map((value) => value + 4),
+      customdata: switchingPlot.u,
+      name: "S_u",
+      mode: "lines",
+      line: { color: "#c14f2c", width: 2, shape: "hv" },
+      hovertemplate: "S_u: %{customdata}<extra></extra>",
+    },
+    {
+      x: switchingTimeMs,
+      y: switchingPlot.v.map((value) => value + 2),
+      customdata: switchingPlot.v,
+      name: "S_v",
+      mode: "lines",
+      line: { color: "#4e7a76", width: 2, shape: "hv" },
+      hovertemplate: "S_v: %{customdata}<extra></extra>",
+    },
+    {
+      x: switchingTimeMs,
+      y: switchingPlot.w,
+      customdata: switchingPlot.w,
+      name: "S_w",
+      mode: "lines",
+      line: { color: "#6a5495", width: 2, shape: "hv" },
+      hovertemplate: "S_w: %{customdata}<extra></extra>",
+    },
+  ], {
     ...plotTheme,
-    title: "変調信号とキャリア",
+    title: "スイッチングパターン",
     xaxis: { ...plotTheme.xaxis, title: "時間 [ms]" },
-    yaxis: { ...plotTheme.yaxis, title: "正規化振幅" },
+    yaxis: {
+      ...plotTheme.yaxis,
+      title: "スイッチング状態",
+      tickvals: [0, 1, 2, 3, 4, 5],
+      ticktext: ["S_w=0", "S_w=1", "S_v=0", "S_v=1", "S_u=0", "S_u=1"],
+      range: [-0.4, 5.4],
+    },
   }, { responsive: true, displayModeBar: false });
 
-  const lineVoltageTraces = [
-    { x: timeMs, y: data.voltages.v_uv, name: "v_uv", line: { color: "#c14f2c", width: 2 } },
-    { x: timeMs, y: data.voltages.v_vw, name: "v_vw", line: { color: "#4e7a76", width: 2 } },
-    { x: timeMs, y: data.voltages.v_wu, name: "v_wu", line: { color: "#6a5495", width: 2 } },
-    {
-      x: timeMs,
-      y: data.voltages.v_uv_fund,
-      name: "v_uv fundamental",
-      line: { color: "#182126", width: 2.2, dash: "dash" },
-    },
-  ];
-  if (baselineResponse) {
-    const baselineTimeMs = baselineResponse.time.map((value) => value * 1000.0);
+  const lineVoltageTraces = [];
+  if (showLineVuv) {
     lineVoltageTraces.push({
-      x: baselineTimeMs,
-      y: baselineResponse.voltages.v_uv_fund,
-      name: "baseline v_uv fundamental",
-      line: { color: "#d97706", width: 2, dash: "dot" },
+      x: lineVoltageTimeMs,
+      y: lineVoltagePlot.v_uv,
+      name: "v_uv",
+      line: { color: "#c14f2c", width: 2.4, shape: "hv" },
     });
   }
+  if (showLineVvw) {
+    lineVoltageTraces.push({
+      x: lineVoltageTimeMs,
+      y: lineVoltagePlot.v_vw,
+      name: "v_vw",
+      line: { color: "#4e7a76", width: 1.5, shape: "hv" },
+      opacity: 0.72,
+    });
+  }
+  if (showLineVwu) {
+    lineVoltageTraces.push({
+      x: lineVoltageTimeMs,
+      y: lineVoltagePlot.v_wu,
+      name: "v_wu",
+      line: { color: "#6a5495", width: 1.5, shape: "hv" },
+      opacity: 0.72,
+    });
+  }
+  lineVoltageTraces.push({
+    x: lineVoltageTimeMs,
+    y: lineVoltagePlot.v_uv_fund,
+    name: "v_uv fundamental",
+    line: { color: "#182126", width: 2.2, dash: "dash" },
+  });
 
   Plotly.react("lineVoltagePlot", lineVoltageTraces, {
     ...plotTheme,
-    title: "線間電圧",
+    title: "線間電圧 (PWM ステップ観察)",
     xaxis: { ...plotTheme.xaxis, title: "時間 [ms]" },
     yaxis: { ...plotTheme.yaxis, title: "電圧 [V]" },
   }, { responsive: true, displayModeBar: false });
 
-  Plotly.react("phaseVoltagePlot", [
-    { x: timeMs, y: data.voltages.v_uN, name: "v_uN", line: { color: "#182126", width: 1.8 } },
-    { x: timeMs, y: data.voltages.v_uN_fund, name: "v_uN fundamental", line: { color: "#c14f2c", width: 2.2, dash: "dash" } },
-  ], {
+  const phaseVoltageTraces = [
+    {
+      x: phaseVoltageTimeMs,
+      y: phaseVoltagePlot.v_uN,
+      name: "v_uN",
+      line: { color: "#182126", width: 1.5, shape: "hv" },
+      opacity: 0.65,
+    },
+    {
+      x: phaseVoltageTimeMs,
+      y: phaseVoltagePlot.v_uN_fund,
+      name: "v_uN fundamental",
+      line: { color: "#c14f2c", width: 2.4, dash: "dash" },
+    },
+  ];
+  if (baselineResponse) {
+    const baselinePhaseVoltagePlot = baselineResponse.phase_voltage_plot || {
+      time: baselineResponse.time,
+      v_uN_fund: baselineResponse.voltages.v_uN_fund,
+    };
+    const baselineTimeMs = baselinePhaseVoltagePlot.time.map((value) => value * 1000.0);
+    phaseVoltageTraces.push({
+      x: baselineTimeMs,
+      y: baselinePhaseVoltagePlot.v_uN_fund,
+      name: "baseline v_uN fundamental",
+      line: { color: "#d97706", width: 2, dash: "dot" },
+    });
+  }
+
+  Plotly.react("phaseVoltagePlot", phaseVoltageTraces, {
     ...plotTheme,
-    title: "相電圧",
+    title: "相電圧 (基本波比較)",
     xaxis: { ...plotTheme.xaxis, title: "時間 [ms]" },
     yaxis: { ...plotTheme.yaxis, title: "電圧 [V]" },
   }, { responsive: true, displayModeBar: false });
@@ -581,7 +1498,14 @@ async function exportDashboardPng() {
   }
 
   try {
-    const plotIds = ["referencePlot", "lineVoltagePlot", "phaseVoltagePlot", "currentPlot", "fftPlot"];
+    const plotIds = [
+      "referencePlot",
+      "switchingPlot",
+      "lineVoltagePlot",
+      "phaseVoltagePlot",
+      "currentPlot",
+      "fftPlot",
+    ];
     const images = [];
     for (const plotId of plotIds) {
       const plotElement = document.getElementById(plotId);
@@ -596,7 +1520,7 @@ async function exportDashboardPng() {
 
     const canvas = document.createElement("canvas");
     canvas.width = 1600;
-    canvas.height = 2300;
+  canvas.height = 2420;
     const context = canvas.getContext("2d");
     context.fillStyle = "#f4efe6";
     context.fillRect(0, 0, canvas.width, canvas.height);
@@ -631,6 +1555,7 @@ async function exportDashboardPng() {
       [60, 910],
       [820, 910],
       [60, 1630],
+      [820, 1630],
     ];
     images.forEach((image, imageIndex) => {
       const [x, y] = slots[imageIndex];
@@ -639,7 +1564,7 @@ async function exportDashboardPng() {
 
     if (baselineResponse) {
       context.font = "bold 24px Aptos";
-      context.fillText("Baseline Compare", 820, 1630);
+      context.fillText("Baseline Compare", 60, 2140);
       context.font = "22px Aptos";
       const compareRows = [
         `ΔV1 = ${formatNumber(currentResponse.metrics.V1_pk - baselineResponse.metrics.V1_pk, 1)} V`,
@@ -647,7 +1572,7 @@ async function exportDashboardPng() {
         `ΔTHD_V = ${formatNumber(currentResponse.metrics.THD_V - baselineResponse.metrics.THD_V, 1)} %`,
         `ΔTHD_I = ${formatNumber(currentResponse.metrics.THD_I - baselineResponse.metrics.THD_I, 1)} %`,
       ];
-      compareRows.forEach((row, rowIndex) => context.fillText(row, 820, 1680 + rowIndex * 34));
+      compareRows.forEach((row, rowIndex) => context.fillText(row, 60, 2190 + rowIndex * 34));
     }
 
     canvas.toBlob((blob) => {
@@ -681,6 +1606,11 @@ async function runSimulation() {
   try {
     setStatus("計算中", "シミュレーションを再計算しています。");
     const payload = collectPayload();
+    if (!payload) {
+      setStatus("入力確認", "未入力または範囲外の数値を修正してください。", true);
+      return;
+    }
+
     const response = await fetch("/simulate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -716,6 +1646,21 @@ function scheduleSimulation() {
 
 window.addEventListener("DOMContentLoaded", async () => {
   initializeControls();
+  document.getElementById("section1AnimSpeed").addEventListener("change", () => {
+    if (!svpwmAnimationPaused) {
+      startSvpwmAnimationTimer();
+    }
+  });
+  document.getElementById("section1AnimPlayPause").addEventListener("click", () => {
+    setSvpwmAnimationPaused(!svpwmAnimationPaused);
+  });
+  document.getElementById("section1AnimPrev").addEventListener("click", () => {
+    stepSvpwmAnimation(-1);
+  });
+  document.getElementById("section1AnimNext").addEventListener("click", () => {
+    stepSvpwmAnimation(1);
+  });
+  updateSvpwmAnimationPlayPauseLabel();
   try {
     await fetchScenarios();
   } catch (error) {
@@ -724,4 +1669,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     setStatus("API エラー", "シナリオガイドを取得できませんでした。", true);
   }
   scheduleSimulation();
+});
+
+window.addEventListener("beforeunload", () => {
+  stopSvpwmVectorAnimation();
 });

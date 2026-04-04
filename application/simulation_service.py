@@ -7,19 +7,15 @@ from datetime import datetime
 
 import numpy as np
 
-from application.modulation_config import resolve_modulation_axes
+from application.modulation_config import normalize_modulation_mode
 
 
 def normalize_ui_display_params(
     display_params: Mapping[str, float],
-    pwm_mode: str | None = None,
     fft_target: str = "voltage",
     fft_window: str = "hann",
     overmod_view: bool = False,
-    svpwm_mode: str | None = None,
-    reference_mode: str | None = None,
-    sampling_mode: str | None = None,
-    clamp_mode: str | None = None,
+    modulation_mode: str | None = None,
 ) -> dict[str, object]:
     """UI 表示単位のパラメータを SI 単位系へ変換する.
 
@@ -27,25 +23,15 @@ def normalize_ui_display_params(
         display_params: UI 表示単位のパラメータ辞書。
             V_dc [V], V_ll [V RMS], f [Hz], f_c [kHz], t_d [us],
             V_on [V], R [Ω], L [mH] を含む。
-        pwm_mode: 旧 PWM 方式の後方互換引数。
         fft_target: FFT 表示対象。
         fft_window: FFT 窓関数。
         overmod_view: True のとき線形変調クランプを無効化する。
-        svpwm_mode: 旧 clamp_mode の後方互換引数。
-        reference_mode: 参照生成方式。
-        sampling_mode: サンプリング方式。
-        clamp_mode: クランプ方式。
+        modulation_mode: 単一の変調方式。
 
     Returns:
         simulation runner へ渡す SI 単位系の辞書。
     """
-    reference_mode, sampling_mode, clamp_mode = resolve_modulation_axes(
-        reference_mode=reference_mode,
-        sampling_mode=sampling_mode,
-        clamp_mode=clamp_mode,
-        pwm_mode=pwm_mode,
-        svpwm_mode=svpwm_mode,
-    )
+    resolved_modulation_mode = normalize_modulation_mode(modulation_mode)
 
     return {
         "V_dc": float(display_params["V_dc"]),
@@ -56,9 +42,7 @@ def normalize_ui_display_params(
         "V_on": float(display_params["V_on"]),
         "R": float(display_params["R"]),
         "L": float(display_params["L"]) / 1000.0,
-        "reference_mode": reference_mode,
-        "sampling_mode": sampling_mode,
-        "clamp_mode": clamp_mode,
+        "modulation_mode": resolved_modulation_mode,
         "overmod_view": bool(overmod_view),
         "fft_target": fft_target,
         "fft_window": fft_window,
@@ -98,6 +82,8 @@ def build_export_payload(
             "V_on_V": float(display_params["V_on"]),
             "R_ohm": float(display_params["R"]),
             "L_mH": float(display_params["L"]),
+            "modulation_mode": meta["modulation_mode"],
+            "modulation_mode_label": meta["modulation_mode_label"],
             "reference_mode": meta["reference_mode"],
             "sampling_mode": meta["sampling_mode"],
             "clamp_mode": meta["clamp_mode"],

@@ -15,9 +15,9 @@ from webapi.schemas import SimulationRequest
 WEBUI_DIR = Path(__file__).resolve().parent.parent / "webui"
 
 app = FastAPI(
-    title="3-Level PWM Learning Simulator API",
+    title="Three-Phase Two-Level PWM Inverter Learning Simulator API",
     version=SIMULATION_API_VERSION,
-    description="Three-phase PWM inverter learning simulator web API.",
+    description="Three-phase two-level PWM inverter learning simulator web API.",
 )
 
 app.mount("/static", StaticFiles(directory=WEBUI_DIR), name="static")
@@ -50,5 +50,6 @@ def simulate(request: SimulationRequest) -> dict[str, object]:
     results = run_simulation(request.to_simulation_params())
     response = build_web_response(results)
     response["meta"]["fft_target"] = request.fft_target
+    response["fft"]["target"] = request.fft_target
 
     return response

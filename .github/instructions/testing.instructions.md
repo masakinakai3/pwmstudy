@@ -72,4 +72,4 @@ assert abs(I_measured - I_theory) / I_theory < 0.05
 - 新規テストは既存のクラス構造に追加するか、新モジュール用に新クラスを作成する
 - リグレッション: 変更後は既存34件が全て PASS することを確認する
 - パラメータ化テスト `@pytest.mark.parametrize` で複数条件を網羅
-- エッジケース: m_a = 0, m_a = 1, f_c >> f, R → 0, L → 0, Third Harmonic Injection, Regular Sampling
+- エッジケース: m_a = 0, m_a = 1, f_c >> f, R → 0, L → 0, Third Harmonic Injection, unsupported sampling mode rejection

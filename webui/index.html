@@ -14,7 +14,7 @@
         <p class="eyebrow">Three-Phase PWM Inverter</p>
         <h1>Web Learning Simulator</h1>
         <p class="hero-copy">
-          主要 8 パラメータと PWM 方式をブラウザから操作し、
+          主要 8 パラメータと変調方式をブラウザから操作し、
           変調波形、電圧、電流、FFT に加えて理論比較と条件比較を同一画面で確認します。
         </p>
       </div>
@@ -34,35 +34,21 @@
 
         <section class="mode-panel">
           <label>
-            <span>参照生成方式</span>
-            <select id="referenceMode">
-              <option value="sinusoidal">Sinusoidal Reference</option>
-              <option value="third_harmonic">Third Harmonic Injection</option>
-              <option value="minmax">Min-Max Zero-Sequence (SVPWM Eq.)</option>
-            </select>
-          </label>
-          <label>
-            <span>サンプリング方式</span>
-            <select id="samplingMode">
-              <option value="natural">Natural Sampling</option>
-              <option value="regular">Regular Sampling</option>
+            <span>変調方式</span>
+            <select id="modulationMode">
+              <option value="carrier">三角波比較</option>
+              <option value="carrier_third_harmonic">三角波比較(三倍高調波)</option>
+              <option value="carrier_two_phase">三角波比較(二相変調)</option>
+              <option value="space_vector">空間ベクトル</option>
+              <option value="space_vector_two_phase">空間ベクトル(二相変調)</option>
             </select>
           </label>
           <label>
             <span>過変調観察</span>
             <input type="checkbox" id="overmodView">
           </label>
-          <label>
-            <span>クランプ方式</span>
-            <select id="clampMode">
-              <option value="continuous">Continuous PWM</option>
-              <option value="dpwm1">DPWM1</option>
-              <option value="dpwm2">DPWM2</option>
-              <option value="dpwm3">DPWM3</option>
-            </select>
-          </label>
           <p id="modulationHint" class="mode-hint">
-            Sinusoidal / Natural / Continuous の組み合わせは教科書的な SPWM です。
+            三角波比較は、自然サンプリング固定の教科書的な SPWM です。
           </p>
           <label>
             <span>FFT 表示対象</span>
@@ -131,8 +117,8 @@
         <section class="plot-section">
           <div class="section-header">
             <p class="eyebrow">Section 1</p>
-            <h2>変調信号 + キャリア</h2>
-            <div class="section1-toggle-group">
+            <h2 id="section1Title">変調信号 + キャリア</h2>
+            <div class="section1-toggle-group" id="section1ReferenceToggles">
               <label class="section1-toggle-item">
                 <input type="checkbox" id="showURef" checked>
                 <span>U相電圧指令</span>
@@ -146,16 +132,63 @@
                 <span>W相電圧指令</span>
               </label>
             </div>
+            <div id="section1AnimationControls" class="section1-animation-controls" hidden>
+              <label class="section1-animation-speed">
+                <span>Animation</span>
+                <select id="section1AnimSpeed">
+                  <option value="0.25">0.25x</option>
+                  <option value="0.5">0.5x</option>
+                  <option value="1.0" selected>1.0x</option>
+                  <option value="2.0">2.0x</option>
+                  <option value="4.0">4.0x</option>
+                </select>
+              </label>
+              <div class="section1-animation-buttons">
+                <button type="button" id="section1AnimPrev" class="section1-anim-button">コマ戻し</button>
+                <button type="button" id="section1AnimPlayPause" class="section1-anim-button">停止</button>
+                <button type="button" id="section1AnimNext" class="section1-anim-button">コマ送り</button>
+              </div>
+            </div>
+            <div id="section1SvpwmInfo" class="svpwm-info" hidden></div>
           </div>
-          <div class="plot-card full-width">
-            <div id="referencePlot" class="plot-surface"></div>
+          <div class="plot-grid section1-split section1-single" id="section1PlotGrid">
+            <div class="plot-card">
+              <div id="referencePlot" class="plot-surface"></div>
+            </div>
+            <div class="plot-card" id="svpwmPatternCard" hidden>
+              <div id="svpwmPatternPlot" class="plot-surface"></div>
+            </div>
           </div>
         </section>
 
         <section class="plot-section">
           <div class="section-header">
             <p class="eyebrow">Section 2</p>
-            <h2>線間電圧 / 相電圧</h2>
+            <h2>スイッチングパターン</h2>
+          </div>
+          <div class="plot-card full-width">
+            <div id="switchingPlot" class="plot-surface"></div>
+          </div>
+        </section>
+
+        <section class="plot-section">
+          <div class="section-header">
+            <p class="eyebrow">Section 3</p>
+            <h2>出力電圧: PWM ステップ / 基本波</h2>
+            <div class="section1-toggle-group">
+              <label class="section1-toggle-item">
+                <input type="checkbox" id="showLineVuv" checked>
+                <span>v_uv</span>
+              </label>
+              <label class="section1-toggle-item">
+                <input type="checkbox" id="showLineVvw">
+                <span>v_vw</span>
+              </label>
+              <label class="section1-toggle-item">
+                <input type="checkbox" id="showLineVwu">
+                <span>v_wu</span>
+              </label>
+            </div>
           </div>
           <div class="plot-grid two-up">
             <div class="plot-card">
@@ -169,7 +202,7 @@
 
         <section class="plot-section">
           <div class="section-header">
-            <p class="eyebrow">Section 3</p>
+            <p class="eyebrow">Section 4</p>
             <h2>相電流 / FFT</h2>
           </div>
           <div class="plot-grid two-up">

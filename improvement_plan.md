@@ -11,7 +11,7 @@
 - 線間電圧 FFT と THD 表示
 - FFT 精度向上と電流スペクトル拡張
 - 基本波オーバーレイと理論電流比較
-- PWM 方式比較モード（Natural / Regular / Third Harmonic Injection）
+- PWM 方式比較モード（Natural / Third Harmonic Injection / Min-Max Zero-Sequence）
 - デッドタイムと固定導通電圧降下を含む簡易非理想インバータモデル
 - RL ソルバの厳密離散化
 - 学習シナリオガイド機能（IMPROVE-11: desktop UI + web UI）

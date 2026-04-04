@@ -20,10 +20,8 @@ from application import (
     run_simulation,
 )
 from application.modulation_config import (
-    CLAMP_MODE_LABELS,
-    REFERENCE_MODE_LABELS,
-    SAMPLING_MODE_LABELS,
-    resolve_modulation_axes,
+    MODULATION_MODE_LABELS,
+    normalize_modulation_mode,
 )
 
 
@@ -76,20 +74,7 @@ class InverterVisualizer:
         """
         self._params = dict(default_params)
         self._overmod_view = bool(self._params.get("overmod_view", False))
-        legacy_pwm_mode = self._params.get("pwm_mode")
-        if legacy_pwm_mode == "natural_overmod":
-            self._overmod_view = True
-        (
-            self._reference_mode,
-            self._sampling_mode,
-            self._clamp_mode,
-        ) = resolve_modulation_axes(
-            reference_mode=self._params.get("reference_mode"),
-            sampling_mode=self._params.get("sampling_mode"),
-            clamp_mode=self._params.get("clamp_mode"),
-            pwm_mode=legacy_pwm_mode,
-            svpwm_mode=self._params.get("svpwm_mode"),
-        )
+        self._modulation_mode = normalize_modulation_mode(self._params.get("modulation_mode"))
         self._fft_target = self._params.get("fft_target", "voltage")
         self._fft_window = self._params.get("fft_window", "hann")
         plt.rcParams["font.family"] = _select_ui_font_family()
@@ -149,71 +134,35 @@ class InverterVisualizer:
             self._sliders[key] = slider
 
     def _setup_mode_selector(self) -> None:
-        """変調3軸選択 UI を配置する."""
-        ax_reference = self._fig.add_axes([0.81, 0.24, 0.16, 0.09])
-        ax_reference.set_title("Reference", fontsize=9)
-        reference_labels = list(REFERENCE_MODE_LABELS.values())
-        reference_active = list(REFERENCE_MODE_LABELS).index(self._reference_mode)
-        self._reference_buttons = RadioButtons(
-            ax_reference,
-            reference_labels,
-            active=reference_active,
+        """単一の変調方式選択 UI を配置する."""
+        ax_mode = self._fig.add_axes([0.78, 0.11, 0.19, 0.18])
+        ax_mode.set_title("変調方式", fontsize=9)
+        modulation_labels = list(MODULATION_MODE_LABELS.values())
+        modulation_active = list(MODULATION_MODE_LABELS).index(self._modulation_mode)
+        self._modulation_buttons = RadioButtons(
+            ax_mode,
+            modulation_labels,
+            active=modulation_active,
         )
-        self._reference_label_to_key = {
-            label: key for key, label in REFERENCE_MODE_LABELS.items()
+        self._modulation_label_to_key = {
+            label: key for key, label in MODULATION_MODE_LABELS.items()
         }
-        self._reference_buttons.on_clicked(self._update_reference_mode)
-        self._set_radio_label_fontsize(self._reference_buttons)
+        self._modulation_buttons.on_clicked(self._update_modulation_mode)
+        self._set_radio_label_fontsize(self._modulation_buttons, fontsize=7)
 
-        ax_sampling = self._fig.add_axes([0.81, 0.06, 0.16, 0.05])
-        ax_sampling.set_title("Sampling", fontsize=9)
-        sampling_labels = list(SAMPLING_MODE_LABELS.values())
-        sampling_active = list(SAMPLING_MODE_LABELS).index(self._sampling_mode)
-        self._sampling_buttons = RadioButtons(
-            ax_sampling,
-            sampling_labels,
-            active=sampling_active,
-        )
-        self._sampling_label_to_key = {
-            label: key for key, label in SAMPLING_MODE_LABELS.items()
-        }
-        self._sampling_buttons.on_clicked(self._update_sampling_mode)
-        self._set_radio_label_fontsize(self._sampling_buttons)
-
-        ax_overmod = self._fig.add_axes([0.81, 0.02, 0.16, 0.035])
+        ax_overmod = self._fig.add_axes([0.81, 0.06, 0.16, 0.035])
         ax_overmod.set_title("", fontsize=8)
         self._overmod_check = CheckButtons(ax_overmod, ["Overmod View"], [self._overmod_view])
         self._overmod_check.on_clicked(self._update_overmod_view)
-
-        ax_clamp = self._fig.add_axes([0.81, 0.12, 0.16, 0.10])
-        ax_clamp.set_title("Clamp", fontsize=9)
-        clamp_labels = list(CLAMP_MODE_LABELS.values())
-        clamp_active = list(CLAMP_MODE_LABELS).index(self._clamp_mode)
-        self._clamp_buttons = RadioButtons(ax_clamp, clamp_labels, active=clamp_active)
-        self._clamp_label_to_key = {
-            label: key for key, label in CLAMP_MODE_LABELS.items()
-        }
-        self._clamp_buttons.on_clicked(self._update_clamp_mode)
-        self._set_radio_label_fontsize(self._clamp_buttons)
 
     def _set_radio_label_fontsize(self, widget: RadioButtons, fontsize: int = 8) -> None:
         """RadioButtons ラベルのフォントサイズを揃える."""
         for text in widget.labels:
             text.set_fontsize(fontsize)
 
-    def _update_reference_mode(self, label: str) -> None:
-        """参照生成方式選択のコールバック."""
-        self._reference_mode = self._reference_label_to_key[label]
-        self._update(None)
-
-    def _update_sampling_mode(self, label: str) -> None:
-        """サンプリング方式選択のコールバック."""
-        self._sampling_mode = self._sampling_label_to_key[label]
-        self._update(None)
-
-    def _update_clamp_mode(self, label: str) -> None:
-        """クランプ方式選択のコールバック."""
-        self._clamp_mode = self._clamp_label_to_key[label]
+    def _update_modulation_mode(self, label: str) -> None:
+        """変調方式選択のコールバック."""
+        self._modulation_mode = self._modulation_label_to_key[label]
         self._update(None)
 
     def _update_overmod_view(self, label: str) -> None:
@@ -332,12 +281,8 @@ class InverterVisualizer:
                 self._sliders[key].set_val(val)
             # set_active は内部で _update_* を呼ぶが、フラグにより
             # _update は実行されず、選択状態のみ更新される
-            reference_idx = list(REFERENCE_MODE_LABELS).index(scenario["reference_mode"])
-            self._reference_buttons.set_active(reference_idx)
-            sampling_idx = list(SAMPLING_MODE_LABELS).index(scenario["sampling_mode"])
-            self._sampling_buttons.set_active(sampling_idx)
-            clamp_idx = list(CLAMP_MODE_LABELS).index(scenario["clamp_mode"])
-            self._clamp_buttons.set_active(clamp_idx)
+            modulation_idx = list(MODULATION_MODE_LABELS).index(scenario["modulation_mode"])
+            self._modulation_buttons.set_active(modulation_idx)
             scenario_overmod = bool(scenario.get("overmod_view", False))
             current_overmod = bool(self._overmod_check.get_status()[0])
             if scenario_overmod != current_overmod:
@@ -518,9 +463,7 @@ class InverterVisualizer:
             fft_target=self._fft_target,
             fft_window=self._fft_window,
             overmod_view=self._overmod_view,
-            reference_mode=self._reference_mode,
-            sampling_mode=self._sampling_mode,
-            clamp_mode=self._clamp_mode,
+            modulation_mode=self._modulation_mode,
         )
 
     def _run_simulation(
@@ -612,10 +555,9 @@ class InverterVisualizer:
         self._lines["v_v"].set_data(t_ms, results["v_v"])
         self._lines["v_w"].set_data(t_ms, results["v_w"])
         self._lines["carrier"].set_data(t_ms, results["v_carrier"])
-        drawstyle = "steps-post" if results["sampling_mode"] == "regular" else "default"
-        self._lines["v_u"].set_drawstyle(drawstyle)
-        self._lines["v_v"].set_drawstyle(drawstyle)
-        self._lines["v_w"].set_drawstyle(drawstyle)
+        self._lines["v_u"].set_drawstyle("default")
+        self._lines["v_v"].set_drawstyle("default")
+        self._lines["v_w"].set_drawstyle("default")
 
         # === サブプロット 2: スイッチングパターン（オフセット表示）===
         self._lines["S_u"].set_data(t_ms, results["S_u"] + 4)

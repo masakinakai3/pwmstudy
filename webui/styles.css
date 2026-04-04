@@ -93,6 +93,12 @@ body::before {
   font-size: clamp(2rem, 5vw, 3.6rem);
 }
 
+#section1Title {
+  font-size: clamp(1rem, 1.4vw, 1.2rem) !important;
+  line-height: 1.25;
+  flex: 0 1 auto;
+}
+
 .hero-copy,
 #statusMessage,
 .guide-card p {
@@ -185,6 +191,12 @@ select,
   color: var(--ink);
   padding: 10px 12px;
   font: inherit;
+}
+
+.input-invalid {
+  border-color: rgba(193, 79, 44, 0.9) !important;
+  background: rgba(255, 238, 232, 0.95) !important;
+  box-shadow: 0 0 0 2px rgba(193, 79, 44, 0.12);
 }
 
 .mode-panel,
@@ -334,6 +346,7 @@ select,
   justify-content: space-between;
   align-items: end;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .section1-toggle-group {
@@ -362,19 +375,111 @@ select,
   accent-color: var(--accent);
 }
 
+.section1-animation-controls {
+  flex-basis: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.section1-animation-speed {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.section1-animation-speed select {
+  width: auto;
+  min-width: 82px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.section1-animation-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.section1-anim-button {
+  width: auto;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(24, 33, 38, 0.08);
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.section1-anim-button:hover {
+  background: rgba(24, 33, 38, 0.14);
+}
+
+.svpwm-info {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.svpwm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 0.84rem;
+}
+
+.svpwm-chip strong {
+  font-family: var(--font-display);
+  font-size: 0.96rem;
+}
+
 .plot-grid {
   display: grid;
   gap: 14px;
+}
+
+.section1-split .plot-card {
+  min-height: 360px;
+}
+
+.section1-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.section1-single .plot-card {
+  min-height: 460px;
+}
+
+.section1-single .plot-surface {
+  min-height: 430px;
 }
 
 .two-up {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.section1-split.two-up {
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+}
+
 .plot-card {
   border-radius: var(--radius-lg);
   padding: 10px;
   min-height: 340px;
+  min-width: 0;
 }
 
 .full-width {
@@ -385,6 +490,7 @@ select,
   width: 100%;
   height: 100%;
   min-height: 320px;
+  min-width: 0;
 }
 
 @media (max-width: 1100px) {
@@ -406,6 +512,16 @@ select,
     padding: 16px;
   }
 
+  .section1-animation-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .section1-animation-buttons {
+    justify-content: space-between;
+  }
+
+  .section1-split,
   .two-up,
   .control-inputs,
   .scenario-grid {

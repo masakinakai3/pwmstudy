@@ -12,7 +12,7 @@
 - UI が V_dc, V_LL(rms), f, f_c, t_d, V_on, R, L の 8 パラメータと PWM 方式を操作できる
 - UI が FFT 表示対象と FFT 窓関数を切り替えられる
 - 6段の波形表示と情報パネルが動作する
-- PWM 方式比較として Natural Sampling、Regular Sampling、Third Harmonic Injection を切り替えられる
+- PWM 方式比較として Natural Sampling 固定の SPWM、Third Harmonic Injection、Min-Max Zero-Sequence を切り替えられる
 - 定常区間のみを表示するための助走ロジックがある
 - FFT により基本波振幅・位相・THD を算出できる
 - 理論電流と FFT 実測電流基本波を同一物理量として比較できる

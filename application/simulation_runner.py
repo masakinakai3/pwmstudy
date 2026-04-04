@@ -12,10 +12,11 @@ import numpy as np
 
 from application.modulation_config import (
     CLAMP_MODE_LABELS,
+    MODULATION_MODE_LABELS,
     REFERENCE_MODE_LABELS,
     SAMPLING_MODE_LABELS,
     build_modulation_summary_label,
-    derive_legacy_pwm_mode,
+    normalize_modulation_mode,
     resolve_modulation_axes,
 )
 from simulation.carrier_generator import generate_carrier
@@ -30,7 +31,6 @@ POINTS_PER_CARRIER = 100
 N_DISPLAY_CYCLES = 2
 N_WARMUP_CYCLES_MIN = 5
 NONIDEAL_CORRECTION_STEPS = 2
-WEB_CARRIER_POINT_FACTOR = 4
 SIMULATION_API_VERSION = "phase6-v1"
 
 FFT_TARGET_LABELS = {
@@ -41,6 +41,7 @@ FFT_WINDOW_LABELS = {
     "hann": "Hann",
     "rectangular": "Rectangular",
 }
+SQRT3 = np.sqrt(3.0)
 
 
 def _solve_nonideal_power_stage(
@@ -108,6 +109,92 @@ def _select_downsample_indices(length: int, max_points: int) -> np.ndarray:
     return np.linspace(0, length - 1, max_points, dtype=np.int64)
 
 
+def _select_extrema_preserving_indices(
+    signals: tuple[np.ndarray, ...],
+    max_points: int,
+) -> np.ndarray:
+    """複数系列の局所極値を保持する圧縮インデックスを返す."""
+    if max_points <= 0:
+        raise ValueError("max_points must be positive.")
+    if not signals:
+        raise ValueError("signals must not be empty.")
+
+    length = len(signals[0])
+    if any(len(signal) != length for signal in signals):
+        raise ValueError("All signals must have the same length.")
+    if length <= max_points:
+        return np.arange(length, dtype=np.int64)
+
+    bucket_count = min(length, max(1, max_points // 2))
+
+    while True:
+        selected_indices = {0, length - 1}
+        bucket_edges = np.linspace(0, length, bucket_count + 1, dtype=np.int64)
+
+        for start, end in zip(bucket_edges[:-1], bucket_edges[1:]):
+            if end <= start:
+                continue
+            for signal in signals:
+                segment = signal[start:end]
+                min_index = start + int(np.argmin(segment))
+                max_index = start + int(np.argmax(segment))
+                selected_indices.add(min_index)
+                selected_indices.add(max_index)
+
+        indices = np.array(sorted(selected_indices), dtype=np.int64)
+        if len(indices) <= max_points or bucket_count == 1:
+            return indices
+
+        next_bucket_count = max(1, int(bucket_count * max_points / len(indices)))
+        if next_bucket_count >= bucket_count:
+            next_bucket_count = bucket_count - 1
+        bucket_count = max(1, next_bucket_count)
+
+
+def _select_change_point_indices(
+    signals: tuple[np.ndarray, ...],
+    max_points: int,
+) -> np.ndarray:
+    """段状波形の切替点を保持する圧縮インデックスを返す."""
+    if max_points <= 0:
+        raise ValueError("max_points must be positive.")
+    if not signals:
+        raise ValueError("signals must not be empty.")
+
+    length = len(signals[0])
+    if any(len(signal) != length for signal in signals):
+        raise ValueError("All signals must have the same length.")
+    if length <= max_points:
+        return np.arange(length, dtype=np.int64)
+    if length < 2:
+        return np.arange(length, dtype=np.int64)
+    if max_points == 1:
+        return np.array([0], dtype=np.int64)
+    if max_points == 2:
+        return np.array([0, length - 1], dtype=np.int64)
+
+    has_change = np.zeros(length - 1, dtype=bool)
+    for signal in signals:
+        has_change |= signal[1:] != signal[:-1]
+
+    change_points = np.flatnonzero(has_change) + 1
+    if change_points.size == 0:
+        return np.array([0, length - 1], dtype=np.int64)
+
+    if change_points.size + 2 > max_points:
+        selected = _select_downsample_indices(change_points.size, max_points - 2)
+        change_points = change_points[selected]
+
+    indices = np.concatenate(
+        (
+            np.array([0], dtype=np.int64),
+            change_points.astype(np.int64),
+            np.array([length - 1], dtype=np.int64),
+        )
+    )
+    return np.unique(indices)
+
+
 def _to_serializable_list(values: np.ndarray) -> list[float] | list[int]:
     """NumPy 配列を JSON 化しやすい Python の list へ変換する."""
     if np.issubdtype(values.dtype, np.integer):
@@ -137,13 +224,153 @@ def _build_web_fft_payload(
     }
 
 
+def _clarke_alpha_beta(
+    v_u: np.ndarray,
+    v_v: np.ndarray,
+    v_w: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """3相参照を alpha-beta 軸へ変換する."""
+    alpha = (2.0 / 3.0) * (v_u - 0.5 * v_v - 0.5 * v_w)
+    beta = (2.0 / 3.0) * ((SQRT3 / 2.0) * (v_v - v_w))
+    return alpha, beta
+
+
+def _build_carrier_boundary_hold(
+    signal: np.ndarray,
+    carrier_index: np.ndarray,
+) -> np.ndarray:
+    """キャリア周期境界サンプルを周期内で保持した系列を返す."""
+    _, start_indices, counts = np.unique(carrier_index, return_index=True, return_counts=True)
+    sampled_values = signal[start_indices]
+    return np.repeat(sampled_values, counts)
+
+
+def _build_svpwm_observer_payload(
+    t_disp: np.ndarray,
+    v_u_ref: np.ndarray,
+    v_v_ref: np.ndarray,
+    v_w_ref: np.ndarray,
+    f_c: float,
+    modulation_mode: str,
+) -> dict[str, object] | None:
+    """SVPWM 観察用の境界サンプル保持系列と周期内シーケンスを生成する."""
+    if modulation_mode not in {"space_vector", "space_vector_two_phase"}:
+        return None
+
+    if len(t_disp) == 0:
+        return None
+
+    carrier_index = np.floor((t_disp - t_disp[0]) * f_c + 1.0e-12).astype(np.int64)
+    carrier_index = np.maximum(carrier_index, 0)
+    _, start_indices, counts = np.unique(carrier_index, return_index=True, return_counts=True)
+
+    held_u = _build_carrier_boundary_hold(v_u_ref, carrier_index)
+    held_v = _build_carrier_boundary_hold(v_v_ref, carrier_index)
+    held_w = _build_carrier_boundary_hold(v_w_ref, carrier_index)
+
+    alpha, beta = _clarke_alpha_beta(v_u_ref, v_v_ref, v_w_ref)
+    alpha_hold, beta_hold = _clarke_alpha_beta(held_u, held_v, held_w)
+
+    T_s = 1.0 / f_c
+    windows: list[dict[str, object]] = []
+    for window_idx, start in enumerate(start_indices):
+        end = start + counts[window_idx]
+        alpha_k = float(alpha_hold[start])
+        beta_k = float(beta_hold[start])
+
+        angle = float(np.arctan2(beta_k, alpha_k))
+        if angle < 0.0:
+            angle += 2.0 * np.pi
+        sector = int(np.floor(angle / (np.pi / 3.0))) + 1
+        theta = angle - (sector - 1) * (np.pi / 3.0)
+
+        modulation_mag = float(np.hypot(alpha_k, beta_k))
+        t1_raw = T_s * SQRT3 * modulation_mag * np.sin(np.pi / 3.0 - theta)
+        t2_raw = T_s * SQRT3 * modulation_mag * np.sin(theta)
+        t1 = float(np.clip(t1_raw, 0.0, T_s))
+        t2 = float(np.clip(t2_raw, 0.0, T_s - t1))
+        t0 = float(max(0.0, T_s - t1 - t2))
+        t0_half = 0.5 * t0
+
+        active_a = f"V{sector}"
+        active_b = f"V{(sector % 6) + 1}"
+        if modulation_mode == "space_vector_two_phase":
+            u_hold = float(held_u[start])
+            v_hold = float(held_v[start])
+            w_hold = float(held_w[start])
+            max_ref = max(u_hold, v_hold, w_hold)
+            min_ref = min(u_hold, v_hold, w_hold)
+            dist_to_pos = abs(1.0 - max_ref)
+            dist_to_neg = abs(-1.0 - min_ref)
+            zero_vector = "V7" if dist_to_pos <= dist_to_neg else "V0"
+            sequence = [
+                zero_vector,
+                active_a,
+                active_b,
+                zero_vector,
+                active_b,
+                active_a,
+                zero_vector,
+            ]
+        else:
+            sequence = ["V0", active_a, active_b, "V7", active_b, active_a, "V0"]
+        segment_durations = [
+            0.5 * t0_half,
+            0.5 * t1,
+            0.5 * t2,
+            t0_half,
+            0.5 * t2,
+            0.5 * t1,
+            0.5 * t0_half,
+        ]
+        event_times_rel_s = [0.0]
+        for duration in segment_durations:
+            event_times_rel_s.append(event_times_rel_s[-1] + duration)
+
+        # 数値丸めにより最終値が僅かにずれることがあるため、周期終端を明示する。
+        event_times_rel_s[-1] = float(T_s)
+
+        windows.append(
+            {
+                "window_index": int(window_idx),
+                "start_s": float(t_disp[start]),
+                "end_s": float(t_disp[end - 1]),
+                "sector": sector,
+                "alpha": alpha_k,
+                "beta": beta_k,
+                "theta_in_sector": float(theta),
+                "t1": t1,
+                "t2": t2,
+                "t0": t0,
+                "sequence": sequence,
+                "event_times_rel_s": event_times_rel_s,
+            }
+        )
+
+    return {
+        "enabled": True,
+        "time_s": t_disp,
+        "alpha": alpha,
+        "beta": beta,
+        "carrier_hold": {
+            "u": held_u,
+            "v": held_v,
+            "w": held_w,
+            "alpha": alpha_hold,
+            "beta": beta_hold,
+        },
+        "windows": windows,
+        "switching_period_s": float(T_s),
+    }
+
+
 def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
     """シミュレーションを実行し、UI 非依存の構造化結果辞書を返す.
 
     Args:
         params: SI 単位系のパラメータ辞書。
             V_dc [V], V_ll [V RMS], f [Hz], f_c [Hz], t_d [s], V_on [V],
-            R [Ω], L [H], reference_mode, sampling_mode, clamp_mode,
+            R [Ω], L [H], modulation_mode, overmod_view,
             fft_target, fft_window を含む。
 
     Returns:
@@ -157,29 +384,22 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
     V_on = float(params["V_on"])
     R = float(params["R"])
     L = float(params["L"])
+    modulation_mode = normalize_modulation_mode(
+        str(params.get("modulation_mode")) if params.get("modulation_mode") is not None else None
+    )
     overmod_view = bool(params.get("overmod_view", False))
     fft_target = str(params["fft_target"])
     fft_window = str(params["fft_window"])
-    legacy_pwm_mode = params.get("pwm_mode")
-
-    # 後方互換: 旧モード natural_overmod は natural + overmod_view=True として扱う
-    if legacy_pwm_mode == "natural_overmod":
-        legacy_pwm_mode = "natural"
-        overmod_view = True
 
     reference_mode, sampling_mode, clamp_mode = resolve_modulation_axes(
-        reference_mode=params.get("reference_mode"),
-        sampling_mode=params.get("sampling_mode"),
-        clamp_mode=params.get("clamp_mode"),
-        pwm_mode=str(legacy_pwm_mode) if legacy_pwm_mode is not None else None,
-        svpwm_mode=str(params.get("svpwm_mode")) if params.get("svpwm_mode") is not None else None,
+        modulation_mode=modulation_mode,
     )
+    modulation_mode_label = MODULATION_MODE_LABELS[modulation_mode]
     modulation_summary_label = build_modulation_summary_label(
         reference_mode,
         sampling_mode,
         clamp_mode,
     )
-    legacy_pwm_mode = derive_legacy_pwm_mode(reference_mode, sampling_mode, clamp_mode)
 
     tau = L / R
     T_cycle = 1.0 / f
@@ -247,6 +467,15 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
     t_disp = t[sl] - t[-n_display]
     t_fft = t[fft_slice] - t[-n_display]
 
+    svpwm_observer = _build_svpwm_observer_payload(
+        t_disp,
+        v_u_ref[sl],
+        v_v_ref[sl],
+        v_w_ref[sl],
+        f_c,
+        modulation_mode,
+    )
+
     fft_vuv = analyze_spectrum(v_uv[fft_slice], dt_actual, f, window_mode=fft_window)
     fft_vuN = analyze_spectrum(v_uN[fft_slice], dt_actual, f, window_mode=fft_window)
     fft_iu = analyze_spectrum(i_u[fft_slice], dt_actual, f, window_mode=fft_window)
@@ -279,6 +508,8 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
     result = {
         "meta": {
             "simulation_api_version": SIMULATION_API_VERSION,
+            "modulation_mode": modulation_mode,
+            "modulation_mode_label": modulation_mode_label,
             "reference_mode": reference_mode,
             "reference_mode_label": REFERENCE_MODE_LABELS[reference_mode],
             "sampling_mode": sampling_mode,
@@ -287,7 +518,6 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
             "clamp_mode": clamp_mode,
             "clamp_mode_label": CLAMP_MODE_LABELS[clamp_mode],
             "modulation_summary_label": modulation_summary_label,
-            "legacy_pwm_mode": legacy_pwm_mode,
             "fft_target": fft_target,
             "fft_target_label": FFT_TARGET_LABELS[fft_target],
             "fft_window": fft_window,
@@ -313,6 +543,7 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
         "carrier": {
             "waveform": v_carrier[sl],
         },
+        "svpwm_observer": svpwm_observer,
         "switching": {
             "u": S_u_plot[sl],
             "v": S_v_plot[sl],
@@ -350,6 +581,7 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
             "V_ll_rms": V_ll,  # [V RMS] — V_ll はすでに RMS 値
             "f": f,
             "f_c": f_c,
+            "modulation_mode": modulation_mode,
             "t_d": t_d,
             "V_on": V_on,
             "R": R,
@@ -392,6 +624,8 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
         "V_ll": V_ll,
         "t_d": t_d,
         "V_on": V_on,
+        "modulation_mode": modulation_mode,
+        "modulation_mode_label": modulation_mode_label,
         "reference_mode": reference_mode,
         "reference_mode_label": REFERENCE_MODE_LABELS[reference_mode],
         "sampling_mode": sampling_mode,
@@ -400,7 +634,6 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
         "clamp_mode": clamp_mode,
         "clamp_mode_label": CLAMP_MODE_LABELS[clamp_mode],
         "modulation_summary_label": modulation_summary_label,
-        "legacy_pwm_mode": legacy_pwm_mode,
         "fft_target": fft_target,
         "fft_target_label": FFT_TARGET_LABELS[fft_target],
         "fft_window": fft_window,
@@ -437,8 +670,30 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
     """
     display_time = np.asarray(results["time"]["display_s"])
     time_indices = _select_downsample_indices(len(display_time), max_points)
-    carrier_max_points = min(len(display_time), max_points * WEB_CARRIER_POINT_FACTOR)
-    carrier_indices = _select_downsample_indices(len(display_time), carrier_max_points)
+    carrier_indices = _select_extrema_preserving_indices(
+        (np.asarray(results["carrier"]["waveform"]),),
+        max_points,
+    )
+    switching_indices = _select_change_point_indices(
+        (
+            np.asarray(results["switching"]["u"]),
+            np.asarray(results["switching"]["v"]),
+            np.asarray(results["switching"]["w"]),
+        ),
+        max_points,
+    )
+    line_voltage_indices = _select_change_point_indices(
+        (
+            np.asarray(results["voltages"]["v_uv"]),
+            np.asarray(results["voltages"]["v_vw"]),
+            np.asarray(results["voltages"]["v_wu"]),
+        ),
+        max_points,
+    )
+    phase_voltage_indices = _select_extrema_preserving_indices(
+        (np.asarray(results["voltages"]["v_uN"]),),
+        max_points,
+    )
 
     reference = results["reference"]
     modulation = results["modulation"]
@@ -453,11 +708,12 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
     response = {
         "meta": {
             "simulation_api_version": meta["simulation_api_version"],
+            "modulation_mode": meta["modulation_mode"],
+            "modulation_mode_label": meta["modulation_mode_label"],
             "reference_mode": meta["reference_mode"],
             "sampling_mode": meta["sampling_mode"],
             "clamp_mode": meta["clamp_mode"],
             "modulation_summary_label": meta["modulation_summary_label"],
-            "legacy_pwm_mode": meta["legacy_pwm_mode"],
             "overmod_view": bool(meta["overmod_view"]),
             "fft_target": meta["fft_target"],
             "fft_window": meta["fft_window"],
@@ -474,6 +730,7 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
             "V_on": float(metrics["V_on"]),
             "R": float(metrics["R"]),
             "L": float(metrics["L"]),
+            "modulation_mode": metrics["modulation_mode"],
             "reference_mode": metrics["reference_mode"],
             "sampling_mode": metrics["sampling_mode"],
             "clamp_mode": metrics["clamp_mode"],
@@ -495,10 +752,31 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
             "time": _to_serializable_list(display_time[carrier_indices]),
             "waveform": _to_serializable_list(np.asarray(carrier["waveform"])[carrier_indices]),
         },
+        "svpwm_observer": {
+            "enabled": False,
+        },
         "switching": {
             "u": _to_serializable_list(np.asarray(switching["u"])[time_indices]),
             "v": _to_serializable_list(np.asarray(switching["v"])[time_indices]),
             "w": _to_serializable_list(np.asarray(switching["w"])[time_indices]),
+        },
+        "switching_plot": {
+            "time": _to_serializable_list(display_time[switching_indices]),
+            "u": _to_serializable_list(np.asarray(switching["u"])[switching_indices]),
+            "v": _to_serializable_list(np.asarray(switching["v"])[switching_indices]),
+            "w": _to_serializable_list(np.asarray(switching["w"])[switching_indices]),
+        },
+        "line_voltage_plot": {
+            "time": _to_serializable_list(display_time[line_voltage_indices]),
+            "v_uv": _to_serializable_list(np.asarray(voltages["v_uv"])[line_voltage_indices]),
+            "v_vw": _to_serializable_list(np.asarray(voltages["v_vw"])[line_voltage_indices]),
+            "v_wu": _to_serializable_list(np.asarray(voltages["v_wu"])[line_voltage_indices]),
+            "v_uv_fund": _to_serializable_list(np.asarray(voltages["v_uv_fund"])[line_voltage_indices]),
+        },
+        "phase_voltage_plot": {
+            "time": _to_serializable_list(display_time[phase_voltage_indices]),
+            "v_uN": _to_serializable_list(np.asarray(voltages["v_uN"])[phase_voltage_indices]),
+            "v_uN_fund": _to_serializable_list(np.asarray(voltages["v_uN_fund"])[phase_voltage_indices]),
         },
         "voltages": {
             "v_uv": _to_serializable_list(np.asarray(voltages["v_uv"])[time_indices]),
@@ -544,5 +822,51 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
             "THD_I": float(spectra["i_u"]["thd"]),
         },
     }
+
+    svpwm_observer = results.get("svpwm_observer")
+    if svpwm_observer is not None:
+        observer_time = np.asarray(svpwm_observer["time_s"])
+        hold_u = np.asarray(svpwm_observer["carrier_hold"]["u"])
+        hold_v = np.asarray(svpwm_observer["carrier_hold"]["v"])
+        hold_w = np.asarray(svpwm_observer["carrier_hold"]["w"])
+        hold_indices = _select_change_point_indices((hold_u, hold_v, hold_w), max_points)
+
+        response["svpwm_observer"] = {
+            "enabled": bool(svpwm_observer["enabled"]),
+            "switching_period_s": float(svpwm_observer["switching_period_s"]),
+            "alpha": _to_serializable_list(np.asarray(svpwm_observer["alpha"])[time_indices]),
+            "beta": _to_serializable_list(np.asarray(svpwm_observer["beta"])[time_indices]),
+            "carrier_hold": {
+                "time": _to_serializable_list(observer_time[hold_indices]),
+                "u": _to_serializable_list(hold_u[hold_indices]),
+                "v": _to_serializable_list(hold_v[hold_indices]),
+                "w": _to_serializable_list(hold_w[hold_indices]),
+                "alpha": _to_serializable_list(
+                    np.asarray(svpwm_observer["carrier_hold"]["alpha"])[hold_indices]
+                ),
+                "beta": _to_serializable_list(
+                    np.asarray(svpwm_observer["carrier_hold"]["beta"])[hold_indices]
+                ),
+            },
+            "windows": [
+                {
+                    "window_index": int(window["window_index"]),
+                    "start_s": float(window["start_s"]),
+                    "end_s": float(window["end_s"]),
+                    "sector": int(window["sector"]),
+                    "alpha": float(window["alpha"]),
+                    "beta": float(window["beta"]),
+                    "theta_in_sector": float(window["theta_in_sector"]),
+                    "t1": float(window["t1"]),
+                    "t2": float(window["t2"]),
+                    "t0": float(window["t0"]),
+                    "sequence": list(window["sequence"]),
+                    "event_times_rel_s": [
+                        float(value) for value in window["event_times_rel_s"]
+                    ],
+                }
+                for window in svpwm_observer["windows"]
+            ],
+        }
 
     return response

@@ -374,41 +374,11 @@ class TestPwmComparator:
         expected = np.array([-1, -1, 0, 0, 1], dtype=np.int8)
         assert np.array_equal(leg_u, expected)
 
-    def test_regular_sampling_holds_reference_within_carrier_period(self) -> None:
-        """規則サンプリングでは各キャリア周期で変調信号が保持される."""
+    def test_unsupported_sampling_mode_raises(self) -> None:
+        """削除済みのサンプリング方式は拒否される."""
         v_u, v_v, v_w = generate_reference(V_LL, F, V_DC, T)
-        v_u_reg, v_v_reg, v_w_reg = apply_sampling_mode(v_u, v_v, v_w, T, F_C, "regular")
-
-        carrier_index = np.floor((T - T[0]) * F_C - 1.0e-12).astype(np.int64)
-        carrier_index = np.maximum(carrier_index, 0)
-
-        for signal in (v_u_reg, v_v_reg, v_w_reg):
-            for index in np.unique(carrier_index):
-                segment = signal[carrier_index == index]
-                assert np.allclose(segment, segment[0], atol=1e-12)
-
-    def test_regular_sampling_changes_switching_pattern(self) -> None:
-        """規則サンプリングでは自然サンプリングと異なるスイッチングになる."""
-        f_c_test = 1000.0
-        t_test = np.linspace(0.0, 0.04, 4001)
-        dt_test = t_test[1] - t_test[0]
-
-        v_u, v_v, v_w = generate_reference(V_LL, F, V_DC, t_test)
-        v_carrier = generate_carrier(f_c_test, t_test)
-
-        S_u_natural, _, _ = compare_pwm(v_u, v_v, v_w, v_carrier)
-        v_u_reg, v_v_reg, v_w_reg = apply_sampling_mode(
-            v_u,
-            v_v,
-            v_w,
-            t_test,
-            f_c_test,
-            sampling_mode="regular",
-        )
-        S_u_regular, _, _ = compare_pwm(v_u_reg, v_v_reg, v_w_reg, v_carrier)
-
-        assert dt_test > 0.0
-        assert np.any(S_u_natural != S_u_regular)
+        with pytest.raises(ValueError, match="Unsupported sampling mode: regular"):
+            apply_sampling_mode(v_u, v_v, v_w, T, F_C, "regular")
 
 
 class TestInverterVoltage:
@@ -727,12 +697,10 @@ class TestScenarioPresets:
 
     def test_all_scenarios_have_required_keys(self) -> None:
         """全シナリオが必須キーを持つことを確認する."""
+        from application.modulation_config import MODULATION_MODE_LABELS
         from ui.visualizer import (
-            CLAMP_MODE_LABELS,
             FFT_TARGET_LABELS,
             FFT_WINDOW_LABELS,
-            REFERENCE_MODE_LABELS,
-            SAMPLING_MODE_LABELS,
             SCENARIO_PRESETS,
         )
 
@@ -741,23 +709,15 @@ class TestScenarioPresets:
             assert "label" in scenario, "label キーがない"
             assert "hint" in scenario, "hint キーがない"
             assert "sliders" in scenario, "sliders キーがない"
-            assert "reference_mode" in scenario, "reference_mode キーがない"
-            assert "sampling_mode" in scenario, "sampling_mode キーがない"
-            assert "clamp_mode" in scenario, "clamp_mode キーがない"
+            assert "modulation_mode" in scenario, "modulation_mode キーがない"
             assert "overmod_view" in scenario, "overmod_view キーがない"
             assert "fft_target" in scenario, "fft_target キーがない"
             assert "fft_window" in scenario, "fft_window キーがない"
             assert set(scenario["sliders"].keys()) == required_slider_keys, (
                 f"シナリオ '{scenario['label']}' の sliders キーが不正"
             )
-            assert scenario["reference_mode"] in REFERENCE_MODE_LABELS, (
-                f"シナリオ '{scenario['label']}' の reference_mode が無効"
-            )
-            assert scenario["sampling_mode"] in SAMPLING_MODE_LABELS, (
-                f"シナリオ '{scenario['label']}' の sampling_mode が無効"
-            )
-            assert scenario["clamp_mode"] in CLAMP_MODE_LABELS, (
-                f"シナリオ '{scenario['label']}' の clamp_mode が無効"
+            assert scenario["modulation_mode"] in MODULATION_MODE_LABELS, (
+                f"シナリオ '{scenario['label']}' の modulation_mode が無効"
             )
             assert scenario["fft_target"] in FFT_TARGET_LABELS, (
                 f"シナリオ '{scenario['label']}' の fft_target が無効"
@@ -813,9 +773,7 @@ class TestSimulationRunnerContract:
             "V_on": 0.0,
             "R": 10.0,
             "L": 0.01,
-            "reference_mode": "sinusoidal",
-            "sampling_mode": "natural",
-            "clamp_mode": "continuous",
+            "modulation_mode": "carrier",
             "fft_target": "voltage",
             "fft_window": "hann",
         }
@@ -823,6 +781,7 @@ class TestSimulationRunnerContract:
         results = run_simulation(params)
 
         assert results["meta"]["simulation_api_version"] == SIMULATION_API_VERSION
+        assert results["meta"]["modulation_mode"] == "carrier"
         assert results["meta"]["reference_mode"] == "sinusoidal"
         assert results["meta"]["sampling_mode"] == "natural"
         assert results["meta"]["clamp_mode"] == "continuous"
@@ -868,9 +827,7 @@ class TestSimulationRunnerContract:
             "V_on": 1.0,
             "R": 10.0,
             "L": 0.01,
-            "reference_mode": "third_harmonic",
-            "sampling_mode": "natural",
-            "clamp_mode": "continuous",
+            "modulation_mode": "carrier_third_harmonic",
             "fft_target": "current",
             "fft_window": "hann",
         }
@@ -879,6 +836,7 @@ class TestSimulationRunnerContract:
         response = build_web_response(results, max_points=1000)
 
         assert response["meta"]["simulation_api_version"] == SIMULATION_API_VERSION
+        assert response["meta"]["modulation_mode"] == "carrier_third_harmonic"
         assert response["meta"]["reference_mode"] == "third_harmonic"
         assert response["meta"]["sampling_mode"] == "natural"
         assert response["meta"]["clamp_mode"] == "continuous"
@@ -888,8 +846,12 @@ class TestSimulationRunnerContract:
         assert len(response["voltages"]["v_uv"]) == len(response["time"])
         assert len(response["currents"]["i_u_theory"]) == len(response["time"])
         assert len(response["carrier_plot"]["time"]) == len(response["carrier_plot"]["waveform"])
-        assert len(response["carrier_plot"]["time"]) >= len(response["time"])
-        assert len(response["carrier_plot"]["time"]) <= 4000
+        assert len(response["carrier_plot"]["time"]) <= 1000
+        assert len(response["line_voltage_plot"]["time"]) == len(response["line_voltage_plot"]["v_uv"])
+        assert len(response["line_voltage_plot"]["time"]) <= 1000
+        assert len(response["phase_voltage_plot"]["time"]) == len(response["phase_voltage_plot"]["v_uN"])
+        assert len(response["phase_voltage_plot"]["time"]) <= 1000
+        assert len(response["switching_plot"]["time"]) <= 1000
         assert len(response["fft"]["v_uv"]["freq"]) <= 1000
         assert response["metrics"]["THD_V"] >= 0.0
         assert response["metrics"]["THD_I"] >= 0.0
@@ -906,9 +868,7 @@ class TestSimulationRunnerContract:
             "V_on": 0.0,
             "R": 10.0,
             "L": 0.01,
-            "reference_mode": "sinusoidal",
-            "sampling_mode": "natural",
-            "clamp_mode": "continuous",
+            "modulation_mode": "carrier",
             "overmod_view": True,
             "fft_target": "voltage",
             "fft_window": "hann",
@@ -916,6 +876,7 @@ class TestSimulationRunnerContract:
 
         results = run_simulation(params)
 
+        assert results["meta"]["modulation_mode"] == "carrier"
         assert results["meta"]["reference_mode"] == "sinusoidal"
         assert results["meta"]["sampling_mode"] == "natural"
         assert results["meta"]["clamp_mode"] == "continuous"
@@ -924,9 +885,9 @@ class TestSimulationRunnerContract:
         assert results["metrics"]["m_a"] > 1.0
         assert results["metrics"]["m_a"] == results["metrics"]["m_a_raw"]
 
-    def test_clamp_mode_switch_is_reflected_in_meta(self) -> None:
-        """min-max 参照でのクランプ方式選択が実行結果メタ情報に反映される."""
-        params_3p = {
+    def test_modulation_mode_switch_is_reflected_in_meta(self) -> None:
+        """単一の変調方式選択が内部3軸へ正しく写像される."""
+        params_space_vector = {
             "V_dc": 300.0,
             "V_ll": 180.0,
             "f": 50.0,
@@ -935,34 +896,35 @@ class TestSimulationRunnerContract:
             "V_on": 0.0,
             "R": 10.0,
             "L": 0.01,
-            "reference_mode": "minmax",
-            "sampling_mode": "natural",
+            "modulation_mode": "space_vector",
             "overmod_view": False,
-            "clamp_mode": "continuous",
             "fft_target": "voltage",
             "fft_window": "hann",
         }
-        params_2p = dict(params_3p)
-        params_2p["clamp_mode"] = "dpwm1"
-        params_3 = dict(params_3p)
-        params_3["clamp_mode"] = "dpwm3"
+        params_space_vector_2p = dict(params_space_vector)
+        params_space_vector_2p["modulation_mode"] = "space_vector_two_phase"
+        params_carrier_2p = dict(params_space_vector)
+        params_carrier_2p["modulation_mode"] = "carrier_two_phase"
 
-        result_3p = run_simulation(params_3p)
-        result_2p = run_simulation(params_2p)
-        result_3 = run_simulation(params_3)
+        result_space_vector = run_simulation(params_space_vector)
+        result_space_vector_2p = run_simulation(params_space_vector_2p)
+        result_carrier_2p = run_simulation(params_carrier_2p)
 
-        assert result_3p["meta"]["reference_mode"] == "minmax"
-        assert result_3p["meta"]["sampling_mode"] == "natural"
-        assert result_3p["meta"]["clamp_mode"] == "continuous"
-        assert result_2p["meta"]["clamp_mode"] == "dpwm1"
-        assert result_3["meta"]["clamp_mode"] == "dpwm3"
-        assert result_3p["meta"]["legacy_pwm_mode"] == "svpwm"
-        assert result_2p["meta"]["legacy_pwm_mode"] == "custom"
-        assert result_3["meta"]["legacy_pwm_mode"] == "custom"
+        assert result_space_vector["meta"]["modulation_mode"] == "space_vector"
+        assert result_space_vector["meta"]["reference_mode"] == "minmax"
+        assert result_space_vector["meta"]["sampling_mode"] == "natural"
+        assert result_space_vector["meta"]["clamp_mode"] == "continuous"
+        assert result_space_vector_2p["meta"]["modulation_mode"] == "space_vector_two_phase"
+        assert result_space_vector_2p["meta"]["clamp_mode"] == "dpwm1"
+        assert result_carrier_2p["meta"]["modulation_mode"] == "carrier_two_phase"
+        assert result_carrier_2p["meta"]["reference_mode"] == "sinusoidal"
+        assert result_space_vector["meta"]["modulation_mode_label"] == "空間ベクトル"
+        assert result_space_vector_2p["meta"]["modulation_mode_label"] == "空間ベクトル(二相変調)"
+        assert result_carrier_2p["meta"]["modulation_mode_label"] == "三角波比較(二相変調)"
 
-    def test_carrier_based_clamp_mode_switch_is_reflected_in_meta(self) -> None:
-        """キャリア比較PWMでもクランプ方式選択が実行結果へ反映される."""
-        base_params = {
+    def test_run_simulation_defaults_to_carrier_modulation(self) -> None:
+        """modulation_mode を省略した場合は carrier を既定値として扱う."""
+        params = {
             "V_dc": 300.0,
             "V_ll": 170.0,
             "f": 50.0,
@@ -971,26 +933,17 @@ class TestSimulationRunnerContract:
             "V_on": 0.0,
             "R": 10.0,
             "L": 0.01,
-            "reference_mode": "sinusoidal",
-            "sampling_mode": "natural",
             "overmod_view": False,
             "fft_target": "voltage",
             "fft_window": "hann",
         }
-        params_3p = dict(base_params)
-        params_3p["clamp_mode"] = "continuous"
-        params_2p = dict(base_params)
-        params_2p["clamp_mode"] = "dpwm2"
 
-        result_3p = run_simulation(params_3p)
-        result_2p = run_simulation(params_2p)
+        result = run_simulation(params)
 
-        assert result_3p["meta"]["reference_mode"] == "sinusoidal"
-        assert result_3p["meta"]["sampling_mode"] == "natural"
-        assert result_3p["meta"]["clamp_mode"] == "continuous"
-        assert result_2p["meta"]["clamp_mode"] == "dpwm2"
-        assert result_3p["meta"]["legacy_pwm_mode"] == "natural"
-        assert result_2p["meta"]["legacy_pwm_mode"] == "custom"
+        assert result["meta"]["modulation_mode"] == "carrier"
+        assert result["meta"]["reference_mode"] == "sinusoidal"
+        assert result["meta"]["sampling_mode"] == "natural"
+        assert result["meta"]["clamp_mode"] == "continuous"
 
 
 class TestApplicationServices:
@@ -1012,9 +965,7 @@ class TestApplicationServices:
             fft_target="current",
             fft_window="hann",
             overmod_view=True,
-            reference_mode="sinusoidal",
-            sampling_mode="regular",
-            clamp_mode="dpwm1",
+            modulation_mode="carrier_two_phase",
         )
 
         assert params["V_dc"] == 300.0
@@ -1022,11 +973,26 @@ class TestApplicationServices:
         assert params["f_c"] == 5000.0
         assert params["t_d"] == 4.0e-6
         assert params["L"] == 0.01
-        assert params["reference_mode"] == "sinusoidal"
-        assert params["sampling_mode"] == "regular"
-        assert params["clamp_mode"] == "dpwm1"
+        assert params["modulation_mode"] == "carrier_two_phase"
         assert params["overmod_view"] is True
         assert params["fft_target"] == "current"
+
+    def test_normalize_ui_display_params_rejects_unsupported_modulation_mode(self) -> None:
+        """未対応の modulation_mode は service 層で拒否される."""
+        with pytest.raises(ValueError, match="Unsupported modulation mode: invalid_mode"):
+            normalize_ui_display_params(
+                {
+                    "V_dc": 300.0,
+                    "V_ll": 141.0,
+                    "f": 50.0,
+                    "f_c": 5.0,
+                    "t_d": 4.0,
+                    "V_on": 1.0,
+                    "R": 10.0,
+                    "L": 10.0,
+                },
+                modulation_mode="invalid_mode",
+            )
 
     def test_build_export_payload_uses_structured_results(self) -> None:
         """JSON 保存 payload が application 層だけで組み立てられる."""
@@ -1045,15 +1011,14 @@ class TestApplicationServices:
                 display_params,
                 fft_target="voltage",
                 fft_window="hann",
-                reference_mode="sinusoidal",
-                sampling_mode="natural",
-                clamp_mode="continuous",
+                modulation_mode="carrier",
             )
         )
 
         payload = build_export_payload(results, display_params)
 
         assert payload["params"]["V_ll_rms_V"] == 141.0
+        assert payload["params"]["modulation_mode"] == "carrier"
         assert payload["params"]["reference_mode"] == "sinusoidal"
         assert payload["params"]["sampling_mode"] == "natural"
         assert payload["params"]["clamp_mode"] == "continuous"
@@ -1077,9 +1042,7 @@ class TestApplicationServices:
                 },
                 fft_target="current",
                 fft_window="hann",
-                reference_mode="third_harmonic",
-                sampling_mode="natural",
-                clamp_mode="continuous",
+                modulation_mode="carrier_third_harmonic",
             )
         )
 
@@ -1128,6 +1091,18 @@ class TestWebApi:
         assert "text/html" in response.headers["content-type"]
         assert "Web Learning Simulator" in response.text
         assert "referencePlot" in response.text
+        assert "switchingPlot" in response.text
+        assert "samplingMode" not in response.text
+        assert "modulationMode" in response.text
+        assert "referenceMode" not in response.text
+        assert "clampMode" not in response.text
+        assert "showLineVuv" in response.text
+        assert "showLineVvw" in response.text
+        assert "showLineVwu" in response.text
+        assert "section1SvpwmInfo" in response.text
+        assert "svpwmPatternPlot" in response.text
+        assert "section1AnimSpeed" in response.text
+        assert "section1AnimPlayPause" in response.text
         assert "scenarioButtons" in response.text
         assert "comparisonPanel" in response.text
         assert "exportJsonButton" in response.text
@@ -1142,11 +1117,26 @@ class TestWebApi:
         assert css_response.status_code == 200
         assert "plot-card" in css_response.text
         assert "scenario-grid" in css_response.text
+        assert "svpwm-chip" in css_response.text
         assert js_response.status_code == 200
         assert "runSimulation" in js_response.text
         assert "fetchScenarios" in js_response.text
+        assert "switchingPlot" in js_response.text
+        assert "computeSvpwmSnapshot" in js_response.text
+        assert "startSvpwmVectorAnimation" in js_response.text
+        assert "stepSvpwmAnimation" in js_response.text
+        assert "setSvpwmAnimationPaused" in js_response.text
+        assert "renderSvpwmPatternPlot" in js_response.text
+        assert "section1SvpwmInfo" in js_response.text
+        assert "svpwmPatternPlot" in js_response.text
         assert "exportDashboardPng" in js_response.text
         assert "v_uv fundamental" in js_response.text
+        assert "baseline v_uN fundamental" in js_response.text
+        assert "showLineVuv" in js_response.text
+        assert "samplingMode" not in js_response.text
+        assert "modulationMode" in js_response.text
+        assert "referenceMode" not in js_response.text
+        assert "clampMode" not in js_response.text
 
     def test_simulate_endpoint_returns_waveforms_and_metrics(self) -> None:
         """simulate エンドポイントが主要データを返す."""
@@ -1160,9 +1150,7 @@ class TestWebApi:
             "V_on": 0.0,
             "R": 10.0,
             "L": 0.01,
-            "reference_mode": "sinusoidal",
-            "sampling_mode": "natural",
-            "clamp_mode": "continuous",
+            "modulation_mode": "carrier",
             "fft_target": "v_uv",
             "fft_window": "hann",
         }
@@ -1172,20 +1160,109 @@ class TestWebApi:
         assert response.status_code == 200
         data = response.json()
         assert data["meta"]["simulation_api_version"] == SIMULATION_API_VERSION
+        assert data["meta"]["modulation_mode"] == "carrier"
         assert data["meta"]["fft_target"] == "v_uv"
         assert len(data["time"]) <= 1000
         assert len(data["reference"]["u"]) == len(data["time"])
         assert len(data["switching"]["u"]) == len(data["time"])
+        assert len(data["switching_plot"]["time"]) == len(data["switching_plot"]["u"])
+        assert len(data["switching_plot"]["time"]) <= 1000
+        assert len(data["line_voltage_plot"]["time"]) == len(data["line_voltage_plot"]["v_uv"])
+        assert len(data["line_voltage_plot"]["time"]) <= 1000
+        assert len(data["phase_voltage_plot"]["time"]) == len(data["phase_voltage_plot"]["v_uN"])
+        assert len(data["phase_voltage_plot"]["time"]) <= 1000
         assert len(data["voltages"]["v_uv"]) == len(data["time"])
         assert len(data["currents"]["i_u"]) == len(data["time"])
         assert len(data["carrier_plot"]["time"]) == len(data["carrier_plot"]["waveform"])
-        assert len(data["carrier_plot"]["time"]) >= len(data["time"])
+        assert len(data["carrier_plot"]["time"]) <= 1000
         assert data["metrics"]["m_f"] == 100.0
         assert data["metrics"]["V_LL_rms_out"] == data["fft"]["v_uv"]["fundamental_rms"]
         assert data["metrics"]["V_LL_rms_total"] == data["fft"]["v_uv"]["rms_total"]
         assert data["metrics"]["V_LL_rms_total"] >= data["metrics"]["V_LL_rms_out"]
         assert data["metrics"]["THD_V"] >= 0.0
         assert data["metrics"]["THD_I"] >= 0.0
+
+    def test_change_point_voltage_plot_beats_uniform_downsampling(self) -> None:
+        """線間電圧の切替点保持圧縮は等間隔間引きより多くの遷移を残す."""
+        params = {
+            "V_dc": 300.0,
+            "V_ll": 141.0,
+            "f": 50.0,
+            "f_c": 5000.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 0.01,
+            "modulation_mode": "carrier",
+            "fft_target": "voltage",
+            "fft_window": "hann",
+        }
+
+        results = run_simulation(params)
+        response = build_web_response(results, max_points=1000)
+        full_signal = np.asarray(results["voltages"]["v_uv"])
+        uniform_signal = np.asarray(response["voltages"]["v_uv"])
+        compressed_signal = np.asarray(response["line_voltage_plot"]["v_uv"])
+
+        full_transitions = int(np.count_nonzero(full_signal[1:] != full_signal[:-1]))
+        uniform_transitions = int(np.count_nonzero(uniform_signal[1:] != uniform_signal[:-1]))
+        compressed_transitions = int(np.count_nonzero(compressed_signal[1:] != compressed_signal[:-1]))
+
+        assert full_transitions > 0
+        assert compressed_transitions > uniform_transitions
+
+    def test_change_point_switching_plot_beats_uniform_downsampling(self) -> None:
+        """スイッチング補助系列は 3 相合成でも等間隔間引きより遷移を残す."""
+        params = {
+            "V_dc": 300.0,
+            "V_ll": 141.0,
+            "f": 50.0,
+            "f_c": 5000.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 0.01,
+            "modulation_mode": "carrier",
+            "fft_target": "voltage",
+            "fft_window": "hann",
+        }
+
+        results = run_simulation(params)
+        response = build_web_response(results, max_points=1000)
+        full_u = np.asarray(results["switching"]["u"])
+        full_v = np.asarray(results["switching"]["v"])
+        full_w = np.asarray(results["switching"]["w"])
+        uniform_u = np.asarray(response["switching"]["u"])
+        uniform_v = np.asarray(response["switching"]["v"])
+        uniform_w = np.asarray(response["switching"]["w"])
+        compressed_u = np.asarray(response["switching_plot"]["u"])
+        compressed_v = np.asarray(response["switching_plot"]["v"])
+        compressed_w = np.asarray(response["switching_plot"]["w"])
+
+        full_transitions = int(
+            np.count_nonzero(
+                (full_u[1:] != full_u[:-1])
+                | (full_v[1:] != full_v[:-1])
+                | (full_w[1:] != full_w[:-1])
+            )
+        )
+        uniform_transitions = int(
+            np.count_nonzero(
+                (uniform_u[1:] != uniform_u[:-1])
+                | (uniform_v[1:] != uniform_v[:-1])
+                | (uniform_w[1:] != uniform_w[:-1])
+            )
+        )
+        compressed_transitions = int(
+            np.count_nonzero(
+                (compressed_u[1:] != compressed_u[:-1])
+                | (compressed_v[1:] != compressed_v[:-1])
+                | (compressed_w[1:] != compressed_w[:-1])
+            )
+        )
+
+        assert full_transitions > 0
+        assert compressed_transitions > uniform_transitions
 
     def test_simulate_endpoint_validates_range(self) -> None:
         """入力範囲外は 422 を返す."""
@@ -1199,9 +1276,7 @@ class TestWebApi:
             "V_on": 0.0,
             "R": 10.0,
             "L": 0.01,
-            "reference_mode": "sinusoidal",
-            "sampling_mode": "natural",
-            "clamp_mode": "continuous",
+            "modulation_mode": "carrier",
             "fft_target": "v_uv",
             "fft_window": "hann",
         }
@@ -1222,9 +1297,7 @@ class TestWebApi:
             "V_on": 1.0,
             "R": 10.0,
             "L": 0.01,
-            "reference_mode": "third_harmonic",
-            "sampling_mode": "natural",
-            "clamp_mode": "continuous",
+            "modulation_mode": "carrier_third_harmonic",
             "fft_target": "i_u",
             "fft_window": "hann",
         }
@@ -1234,11 +1307,11 @@ class TestWebApi:
         assert response.status_code == 200
         data = response.json()
         assert data["meta"]["fft_target"] == "i_u"
-        assert data["fft"]["target"] == "current"
+        assert data["fft"]["target"] == "i_u"
         assert data["metrics"]["m_a_limit"] > 1.0
 
-    def test_simulate_endpoint_accepts_svpwm_mode(self) -> None:
-        """SVPWM モードが DPWM 指定を受理し、線形上限が拡張される."""
+    def test_simulate_endpoint_exposes_svpwm_observer_series(self) -> None:
+        """空間ベクトル方式では backend 生成の観察系列を返す."""
         client = TestClient(app)
         payload = {
             "V_dc": 300.0,
@@ -1249,9 +1322,7 @@ class TestWebApi:
             "V_on": 0.0,
             "R": 10.0,
             "L": 0.01,
-            "pwm_mode": "svpwm",
-            "overmod_view": False,
-            "svpwm_mode": "dpwm3",
+            "modulation_mode": "space_vector",
             "fft_target": "v_uv",
             "fft_window": "hann",
         }
@@ -1260,13 +1331,35 @@ class TestWebApi:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["meta"]["reference_mode"] == "minmax"
-        assert data["meta"]["sampling_mode"] == "natural"
-        assert data["meta"]["clamp_mode"] == "dpwm3"
-        assert data["metrics"]["m_a_limit"] > 1.0
+        observer = data["svpwm_observer"]
+        assert observer["enabled"] is True
+        assert observer["switching_period_s"] > 0.0
+        assert len(observer["alpha"]) == len(data["time"])
+        assert len(observer["beta"]) == len(data["time"])
+        assert len(observer["carrier_hold"]["time"]) == len(observer["carrier_hold"]["u"])
+        assert len(observer["carrier_hold"]["time"]) > 0
+        assert len(observer["windows"]) > 0
 
-    def test_simulate_endpoint_accepts_two_phase_alias(self) -> None:
-        """API は旧 two_phase を後方互換として受理し、内部では DPWM1 として扱う."""
+        first_window = observer["windows"][0]
+        assert 1 <= first_window["sector"] <= 6
+        assert first_window["t1"] >= 0.0
+        assert first_window["t2"] >= 0.0
+        assert first_window["t0"] >= 0.0
+        assert abs(
+            (first_window["t1"] + first_window["t2"] + first_window["t0"])
+            - observer["switching_period_s"]
+        ) < 1.0e-9
+        assert first_window["sequence"][0] == "V0"
+        assert first_window["sequence"][-1] == "V0"
+        assert "V7" in first_window["sequence"]
+        assert len(first_window["event_times_rel_s"]) == 8
+        assert first_window["event_times_rel_s"][0] == 0.0
+        assert abs(
+            first_window["event_times_rel_s"][-1] - observer["switching_period_s"]
+        ) < 1.0e-12
+
+    def test_simulate_endpoint_two_phase_observer_uses_single_zero_vector(self) -> None:
+        """空間ベクトル(二相変調)ではゼロベクトルがV0またはV7の片側に固定される."""
         client = TestClient(app)
         payload = {
             "V_dc": 300.0,
@@ -1277,9 +1370,7 @@ class TestWebApi:
             "V_on": 0.0,
             "R": 10.0,
             "L": 0.01,
-            "pwm_mode": "svpwm",
-            "overmod_view": False,
-            "svpwm_mode": "two_phase",
+            "modulation_mode": "space_vector_two_phase",
             "fft_target": "v_uv",
             "fft_window": "hann",
         }
@@ -1288,7 +1379,45 @@ class TestWebApi:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["meta"]["clamp_mode"] == "dpwm1"
+        observer = data["svpwm_observer"]
+        assert observer["enabled"] is True
+        assert len(observer["windows"]) > 0
+
+        first_window = observer["windows"][0]
+        zero_vectors = [label for label in first_window["sequence"] if label in {"V0", "V7"}]
+        assert len(zero_vectors) > 0
+        assert len(set(zero_vectors)) == 1
+
+    def test_simulate_endpoint_rejects_legacy_mode_fields(self) -> None:
+        """旧モード関連フィールドは API 契約から外し、422 で拒否する."""
+        client = TestClient(app)
+        base_payload = {
+            "V_dc": 300.0,
+            "V_ll_rms": 180.0,
+            "f": 50.0,
+            "f_c": 5000.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 0.01,
+            "modulation_mode": "space_vector",
+            "fft_target": "v_uv",
+            "fft_window": "hann",
+        }
+
+        for field_name, field_value in [
+            ("pwm_mode", "third_harmonic"),
+            ("svpwm_mode", "dpwm3"),
+            ("reference_mode", "sinusoidal"),
+            ("sampling_mode", "regular"),
+            ("clamp_mode", "continuous"),
+        ]:
+            payload = dict(base_payload)
+            payload[field_name] = field_value
+
+            response = client.post("/simulate", json=payload)
+
+            assert response.status_code == 422, field_name
 
     def test_simulate_endpoint_accepts_overmod_checkbox(self) -> None:
         """overmod_view=True を受理し、m_a が 1 を超えるケースを返す."""
@@ -1302,9 +1431,7 @@ class TestWebApi:
             "V_on": 0.0,
             "R": 10.0,
             "L": 0.01,
-            "reference_mode": "sinusoidal",
-            "sampling_mode": "natural",
-            "clamp_mode": "continuous",
+            "modulation_mode": "carrier",
             "overmod_view": True,
             "fft_target": "v_uv",
             "fft_window": "hann",

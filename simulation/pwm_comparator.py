@@ -8,43 +8,9 @@ import numpy as np
 
 def _validate_sampling_mode(mode: str) -> None:
     """サンプリングモード名を検証する."""
-    valid_modes = {"natural", "regular"}
+    valid_modes = {"natural"}
     if mode not in valid_modes:
         raise ValueError(f"Unsupported sampling mode: {mode}")
-
-
-def _apply_regular_sampling_single_phase(
-    v_x: np.ndarray,  # 正規化変調信号
-    f_c: float,       # [Hz] キャリア周波数
-    t: np.ndarray     # [s] 時間配列
-) -> np.ndarray:
-    """単相変調信号へ規則サンプリングを適用する.
-
-    各キャリア周期の中点で変調信号をサンプルし、次周期境界まで保持する。
-
-    Args:
-        v_x: 正規化変調信号 [-1, 1]
-        f_c: キャリア周波数 [Hz]
-        t: 時間配列 [s]
-
-    Returns:
-        規則サンプリング後の保持波形
-    """
-    if f_c <= 0.0:
-        raise ValueError("f_c must be positive for regular sampling.")
-
-    carrier_index = np.floor((t - t[0]) * f_c - 1.0e-12).astype(np.int64)
-    carrier_index = np.maximum(carrier_index, 0)
-
-    _, start_indices, counts = np.unique(
-        carrier_index,
-        return_index=True,
-        return_counts=True,
-    )
-    sample_indices = start_indices + counts // 2
-    sampled_values = v_x[sample_indices]
-
-    return np.repeat(sampled_values, counts)[: len(v_x)]
 
 
 def apply_sampling_mode(
@@ -65,19 +31,11 @@ def apply_sampling_mode(
         f_c: キャリア周波数 [Hz]
         sampling_mode: サンプリング方式
             natural: 連続比較
-            regular: キャリア周期ごとの中点サンプル値を保持
 
     Returns:
         PWM 比較に使う変調信号 3相
     """
     _validate_sampling_mode(sampling_mode)
-
-    if sampling_mode == "regular":
-        return (
-            _apply_regular_sampling_single_phase(v_u, f_c, t),
-            _apply_regular_sampling_single_phase(v_v, f_c, t),
-            _apply_regular_sampling_single_phase(v_w, f_c, t),
-        )
 
     return v_u, v_v, v_w
 

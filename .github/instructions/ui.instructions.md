@@ -39,7 +39,7 @@ applyTo: "ui/**/*.py"
 ### m_a 表示
 - `fig.text()` で Figure 上部に変調率を表示
 - クランプ上限は方式依存
-  - Natural / Regular: 1.0
+  - Natural: 1.0
   - Third Harmonic Injection: `2 / sqrt(3)`
 
 ## Matplotlib 構成

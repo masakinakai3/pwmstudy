@@ -172,10 +172,9 @@ MVP の入力バリデーション初期値は、現行 UI と合わせて次を
 | `R` | [Ω] | 0.1–100 |
 | `L` | [H] | 0.1e-3–100e-3 |
 
-`pwm_mode` は既存 UI と同じく `natural` / `regular` / `third_harmonic` を使う。内部では現行実装に合わせて、
+`pwm_mode` は既存 UI と同じく `natural` / `third_harmonic` を使う。内部では現行実装に合わせて、
 
 - `natural` → `reference_mode="sinusoidal"` + `sampling_mode="natural"`
-- `regular` → `reference_mode="sinusoidal"` + `sampling_mode="regular"`
 - `third_harmonic` → `reference_mode="third_harmonic"` + `sampling_mode="natural"`
 
 へ写像する。

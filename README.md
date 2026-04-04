@@ -1,22 +1,22 @@
 # 三相PWMインバータ学習シミュレータ
 
 三相PWMインバータの原理を対話的に学習するためのシミュレーションソフトウェアです。
-desktop UI と web UI の両方から、指令信号・スイッチングパターン・線間電圧・相電圧・負荷電流・FFT スペクトルを観察できます。
+desktop UI は 6 段構成で指令信号・スイッチングパターン・線間電圧・相電圧・負荷電流・FFT を表示し、web UI は主要 4 セクションで指令信号・スイッチングパターン・電圧・電流・FFT を表示します。
 
 ## 特徴
 
-- **6段波形表示**: 変調信号+キャリア / スイッチングパターン / 線間電圧 / 相電圧 / 相電流 / FFTスペクトル
-- **8パラメータスライダー + 変調3軸選択**: 参照生成方式（Sinusoidal / Third Harmonic Injection / Min-Max Zero-Sequence）、サンプリング方式（Natural / Regular）、クランプ方式（Continuous PWM / DPWM1 / DPWM2 / DPWM3）を独立に切替可能
+- **Desktop 6段 / Web 4セクション**: desktop UI は 変調信号+キャリア / スイッチングパターン / 線間電圧 / 相電圧 / 相電流 / FFT、web UI は主要 4 セクションを表示
+- **8パラメータスライダー + 変調選択**: 三角波比較 / 三角波比較(三倍高調波) / 三角波比較(二相変調) / 空間ベクトル / 空間ベクトル(二相変調) の 5 方式を切替可能。サンプリング方式は Natural 固定
 - **FFT表示切替**: 線間電圧 v_uv と相電流 i_u を切替表示、Hann / Rectangular 窓も選択可能
-- **Web UI**: ブラウザから 8 パラメータ、変調3軸、Overmod View、FFT 表示対象を変更可能
+- **Web UI**: ブラウザから 8 パラメータ、変調方式、Overmod View、FFT 表示対象を変更可能
 - **FastAPI API**: `/health`, `/scenarios`, `/simulate` を公開し、web UI と外部クライアントの双方から利用可能
-- **FFT解析 + THD表示**: 基本波・キャリア高調波の色分け表示、V1 / I1 / RMS / THD / 基本波力率を確認可能
+- **FFT解析 + THD表示**: desktop UI は基本波とキャリア高調波を色分けし、desktop/web の双方で V1 / I1 / RMS / THD / 基本波力率を確認可能
 - **変調率モニタ**: $m_a$ 値を常時表示、過変調時にはクランプ警告
 - **理論比較表示**: 相電流の基本波振幅を理論値と FFT 実測値で比較
 - **定常状態表示**: 助走区間（5τ以上）を自動計算し、定常波形のみを表示
 - **厳密離散 RL ソルバ**: 区分定数の相電圧入力に対し、解析解ベースの離散時間更新で電流を計算
 - **非理想インバータモデル**: デッドタイムと固定導通電圧降下を含む簡易実機近似を切り替え可能
-- **標準組み合わせ比較**: SPWM、THIPWM、Min-Max Zero-Sequence（SVPWM等価）、DPWM1/2/3 を同一UIで比較可能
+- **標準方式比較**: 三角波比較、三角波比較(三倍高調波)、三角波比較(二相変調)、空間ベクトル、空間ベクトル(二相変調) を同一UIで比較可能
 
 ## 動作環境
 
@@ -68,6 +68,7 @@ docker compose up --build
 | `docker compose down` | 停止 |
 | `docker compose logs -f` | リアルタイムログ |
 
+> **Web UI の外部依存**: 現在の web UI は Plotly を `cdn.plot.ly` から読み込みます。閉域環境や完全オフライン環境では、Plotly 資産を `webui/` 配下へ同梱する追加対応が必要です。
 > **デスクトップ版の位置付け**: `python main.py` による desktop UI は並行維持されます。Docker コンテナには desktop UI は含まれません。
 
 ## テスト
@@ -76,7 +77,7 @@ docker compose up --build
 python -m pytest tests/ -v
 ```
 
-62 件のテスト（物理妥当性検証 + application 層 + API/UI 疎通）が実行されます。
+69 件のテスト（物理妥当性検証 + application 層 + API/UI 疎通）が実行されます。
 
 ## プロジェクト構成
 
@@ -84,7 +85,7 @@ python -m pytest tests/ -v
 3lvlpwm/
 ├── main.py                      # エントリポイント（デフォルトパラメータ一元管理）
 ├── application/                 # UI/API 共有の application 層
-│   ├── modulation_config.py     # 参照生成/サンプリング/クランプの3軸定義と正規化
+│   ├── modulation_config.py     # 単一 modulation_mode と内部3軸の定義・正規化
 │   ├── simulation_runner.py     # シミュレーション統合処理
 │   ├── simulation_service.py    # 単位変換・export・baseline サービス
 │   └── scenario_presets.py      # 学習シナリオ共有定義（desktop/web 共用）
@@ -96,7 +97,7 @@ python -m pytest tests/ -v
 │   ├── rl_load_solver.py        # RL負荷電流演算（厳密離散時間解）
 │   └── fft_analyzer.py          # FFTスペクトル解析 + RMS/THD計算
 ├── ui/
-│   └── visualizer.py            # Matplotlib波形表示UI（6段+3軸選択+FFT切替+理論比較）
+│   └── visualizer.py            # Matplotlib波形表示UI（6段+変調方式選択+FFT切替+理論比較）
 ├── webapi/
 │   ├── app.py                   # FastAPI アプリ（/, /health, /scenarios, /simulate）
 │   └── schemas.py               # API 入力スキーマ
@@ -105,7 +106,7 @@ python -m pytest tests/ -v
 │   ├── styles.css               # Web UI スタイル
 │   └── app.js                   # Web UI ロジック
 ├── tests/
-│   └── test_simulation.py       # 物理妥当性 + application/API/UI テスト（62 件）
+│   └── test_simulation.py       # 物理妥当性 + application/API/UI テスト（69 件）
 ├── Dockerfile                   # Web API 単体コンテナ
 ├── docker-compose.yml           # Docker Compose 起動定義
 ├── architecture.md              # アーキテクチャ設計書
@@ -120,20 +121,21 @@ python -m pytest tests/ -v
 現時点の web UI は次の構成です。
 
 1. 8 パラメータ入力
-2. 変調3軸 / FFT 切替
+2. 変調方式 / FFT 切替
 3. 学習シナリオガイド
 4. 理論比較パネル
 5. ベースライン条件比較
 6. JSON / PNG エクスポート
-7. 主要 3 セクション表示
+7. 主要 4 セクション表示
 
-主要 3 セクションは次のとおりです。
+主要 4 セクションは次のとおりです。
 
 1. 変調信号 + キャリア
-2. 線間電圧 / 相電圧
-3. 相電流 / FFT
+2. スイッチングパターン
+3. 線間電圧 / 相電圧
+4. 相電流 / FFT
 
-学習シナリオは desktop UI と共有定義です。ベースライン設定後は線間電圧基本波と相電流を点線で比較できます。
+学習シナリオは desktop UI と共有定義です。ベースライン設定後は相電圧基本波と相電流を点線で比較できます。Web UI では、Section 3 を「線間電圧の PWM ステップ観察」と「相電圧の基本波比較」に分け、線間電圧側は v_uv を既定表示、v_vw と v_wu はトグルで追加表示できるようにしました。スイッチングと線間電圧の急峻な遷移を見やすくするため切替点保持圧縮した補助系列を使って描画します。
 
 ## パラメータ一覧
 
@@ -151,7 +153,7 @@ python -m pytest tests/ -v
 ## シミュレーション処理フロー
 
 ```text
-参照生成方式選択 → クランプ方式適用 → サンプリング方式適用 → キャリア生成 → PWM比較 → デッドタイム適用 →
+変調方式選択 → 内部3軸解決 → サンプリング方式適用 → キャリア生成 → PWM比較 → デッドタイム適用 →
 非理想電圧演算 → RL負荷演算 → FFT解析 → 波形/理論比較表示
 ```
 
