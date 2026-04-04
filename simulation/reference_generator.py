@@ -52,8 +52,7 @@ def generate_reference(
         (v_u, v_v, v_w): 各相の正規化変調信号、値域 [-1, 1]
     """
     _validate_reference_mode(mode)
-    if mode == "svpwm":
-        _validate_svpwm_mode(svpwm_mode)
+    _validate_svpwm_mode(svpwm_mode)
 
     V_ph_peak = V_ll * np.sqrt(2.0) / np.sqrt(3.0)  # [V] 相電圧ピーク値 (V_ll は RMS)
     m_a = 2.0 * V_ph_peak / V_dc                      # 変調率
@@ -90,5 +89,16 @@ def generate_reference(
         v_u = m_a * phase_u
         v_v = m_a * phase_v
         v_w = m_a * phase_w
+
+    # 2相変調（不連続PWM）は三角波比較方式でも適用できるよう共通化する。
+    if mode in {"sinusoidal", "third_harmonic"} and svpwm_mode == "two_phase":
+        phase_stack = np.vstack((v_u, v_v, v_w))
+        v_max = np.max(phase_stack, axis=0)
+        v_min = np.min(phase_stack, axis=0)
+        use_upper_clamp = (v_max + v_min) <= 0.0
+        zero_sequence = np.where(use_upper_clamp, 1.0 - v_max, -1.0 - v_min)
+        v_u = v_u + zero_sequence
+        v_v = v_v + zero_sequence
+        v_w = v_w + zero_sequence
 
     return v_u, v_v, v_w

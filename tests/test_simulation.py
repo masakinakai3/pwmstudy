@@ -216,6 +216,31 @@ class TestReferenceGenerator:
         assert np.allclose(clamped_metric, 1.0, atol=1e-10)
         assert np.allclose(v_u_2p - v_v_2p, v_u_3p - v_v_3p, atol=1e-10)
 
+    def test_carrier_based_two_phase_preserves_line_reference(self) -> None:
+        """三角波比較向け正弦参照でも2相変調が選択でき、線間差を保持する."""
+        V_ll_target = 170.0
+        v_u_3p, v_v_3p, _ = generate_reference(
+            V_ll_target,
+            F,
+            V_DC,
+            T,
+            mode="sinusoidal",
+            svpwm_mode="three_phase",
+        )
+        v_u_2p, v_v_2p, v_w_2p = generate_reference(
+            V_ll_target,
+            F,
+            V_DC,
+            T,
+            mode="sinusoidal",
+            svpwm_mode="two_phase",
+        )
+        phase_stack_2p = np.vstack((v_u_2p, v_v_2p, v_w_2p))
+        clamped_metric = np.max(np.abs(phase_stack_2p), axis=0)
+
+        assert np.allclose(v_u_2p - v_v_2p, v_u_3p - v_v_3p, atol=1e-10)
+        assert np.mean(np.isclose(clamped_metric, 1.0, atol=1e-10)) > 0.9
+
 
 class TestCarrierGenerator:
     """キャリア生成モジュールのテスト."""
@@ -824,6 +849,35 @@ class TestSimulationRunnerContract:
         assert result_2p["meta"]["svpwm_mode"] == "two_phase"
         assert result_3p["meta"]["pwm_mode"] == "svpwm"
         assert result_2p["meta"]["pwm_mode"] == "svpwm"
+
+    def test_carrier_based_phase_modulation_switch_is_reflected_in_meta(self) -> None:
+        """Natural/Regular でも2相/3相変調選択が実行結果へ反映される."""
+        base_params = {
+            "V_dc": 300.0,
+            "V_ll": 170.0,
+            "f": 50.0,
+            "f_c": 5000.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 0.01,
+            "pwm_mode": "natural",
+            "overmod_view": False,
+            "fft_target": "voltage",
+            "fft_window": "hann",
+        }
+        params_3p = dict(base_params)
+        params_3p["svpwm_mode"] = "three_phase"
+        params_2p = dict(base_params)
+        params_2p["svpwm_mode"] = "two_phase"
+
+        result_3p = run_simulation(params_3p)
+        result_2p = run_simulation(params_2p)
+
+        assert result_3p["meta"]["svpwm_mode"] == "three_phase"
+        assert result_2p["meta"]["svpwm_mode"] == "two_phase"
+        assert result_3p["meta"]["pwm_mode"] == "natural"
+        assert result_2p["meta"]["pwm_mode"] == "natural"
 
 
 class TestApplicationServices:
