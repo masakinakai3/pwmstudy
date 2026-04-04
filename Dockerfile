@@ -32,7 +32,7 @@ USER appuser
 
 EXPOSE 8000
 
-# --workers 1: シングルプロセス（学習用少人x数想定）
+# --workers 1: シングルプロセス（学習用少人数想定）
 #   複数同時利用時は --workers を増やすか Gunicorn に切り替えること
 # --no-access-log: コンテナログ軽量化
 #   障害調査時はこのオプションを削除して再ビルドすること

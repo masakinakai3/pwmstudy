@@ -16,6 +16,7 @@ let scenarioPresets = [];
 let currentResponse = null;
 let baselineResponse = null;
 let debounceHandle = null;
+let scenarioFetchFailed = false;
 
 const controlDefinitions = [
   { key: "V_dc", label: "V_dc", min: 100, max: 600, step: 1, unit: "V" },
@@ -451,81 +452,87 @@ async function exportDashboardPng() {
     return;
   }
 
-  const plotIds = ["referencePlot", "lineVoltagePlot", "phaseVoltagePlot", "currentPlot", "fftPlot"];
-  const images = [];
-  for (const plotId of plotIds) {
-    const plotElement = document.getElementById(plotId);
-    const dataUrl = await Plotly.toImage(plotElement, {
-      format: "png",
-      width: 1200,
-      height: 720,
-      scale: 1,
-    });
-    images.push(await loadImage(dataUrl));
-  }
-
-  const canvas = document.createElement("canvas");
-  canvas.width = 1600;
-  canvas.height = 2300;
-  const context = canvas.getContext("2d");
-  context.fillStyle = "#f4efe6";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-
-  context.fillStyle = "#182126";
-  context.font = "bold 42px Georgia";
-  context.fillText("Three-Phase PWM Inverter Report", 60, 70);
-  context.font = "24px Aptos";
-  context.fillText(`timestamp: ${new Date().toLocaleString()}`, 60, 112);
-  context.fillText(`PWM=${currentResponse.meta.pwm_mode}, FFT=${currentResponse.meta.fft_target}`, 60, 146);
-
-  context.font = "bold 26px Aptos";
-  context.fillText("Theory Snapshot", 980, 70);
-  context.font = "22px Aptos";
-  const theoryRows = [
-    `m_a = ${formatNumber(currentResponse.metrics.m_a, 3)}`,
-    `m_f = ${formatNumber(currentResponse.metrics.m_f, 1)}`,
-    `I_theory = ${formatNumber(currentResponse.metrics.I_theory, 2)} A`,
-    `I_measured = ${formatNumber(currentResponse.metrics.I_measured, 2)} A`,
-    `THD_V = ${formatNumber(currentResponse.metrics.THD_V, 1)} %`,
-    `THD_I = ${formatNumber(currentResponse.metrics.THD_I, 1)} %`,
-  ];
-  theoryRows.forEach((row, rowIndex) => context.fillText(row, 980, 116 + rowIndex * 34));
-
-  const slots = [
-    [60, 190],
-    [820, 190],
-    [60, 910],
-    [820, 910],
-    [60, 1630],
-  ];
-  images.forEach((image, imageIndex) => {
-    const [x, y] = slots[imageIndex];
-    context.drawImage(image, x, y, 700, 420);
-  });
-
-  if (baselineResponse) {
-    context.font = "bold 24px Aptos";
-    context.fillText("Baseline Compare", 820, 1630);
-    context.font = "22px Aptos";
-    const compareRows = [
-      `ΔV1 = ${formatNumber(currentResponse.metrics.V1_pk - baselineResponse.metrics.V1_pk, 1)} V`,
-      `ΔI1 = ${formatNumber(currentResponse.metrics.I1_pk - baselineResponse.metrics.I1_pk, 2)} A`,
-      `ΔTHD_V = ${formatNumber(currentResponse.metrics.THD_V - baselineResponse.metrics.THD_V, 1)} %`,
-      `ΔTHD_I = ${formatNumber(currentResponse.metrics.THD_I - baselineResponse.metrics.THD_I, 1)} %`,
-    ];
-    compareRows.forEach((row, rowIndex) => context.fillText(row, 820, 1680 + rowIndex * 34));
-  }
-
-  canvas.toBlob((blob) => {
-    if (!blob) {
-      return;
+  try {
+    const plotIds = ["referencePlot", "lineVoltagePlot", "phaseVoltagePlot", "currentPlot", "fftPlot"];
+    const images = [];
+    for (const plotId of plotIds) {
+      const plotElement = document.getElementById(plotId);
+      const dataUrl = await Plotly.toImage(plotElement, {
+        format: "png",
+        width: 1200,
+        height: 720,
+        scale: 1,
+      });
+      images.push(await loadImage(dataUrl));
     }
-    downloadBlob(
-      `web_pulse_export_${new Date().toISOString().replace(/[:.]/g, "-")}.png`,
-      blob,
-    );
-  }, "image/png");
-  setStatus("PNG保存", "ダッシュボードを PNG として保存しました。");
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 1600;
+    canvas.height = 2300;
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#f4efe6";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+
+    context.fillStyle = "#182126";
+    context.font = "bold 42px Georgia";
+    context.fillText("Three-Phase PWM Inverter Report", 60, 70);
+    context.font = "24px Aptos";
+    context.fillText(`timestamp: ${new Date().toLocaleString()}`, 60, 112);
+    context.fillText(`PWM=${currentResponse.meta.pwm_mode}, FFT=${currentResponse.meta.fft_target}`, 60, 146);
+
+    context.font = "bold 26px Aptos";
+    context.fillText("Theory Snapshot", 980, 70);
+    context.font = "22px Aptos";
+    const theoryRows = [
+      `m_a = ${formatNumber(currentResponse.metrics.m_a, 3)}`,
+      `m_f = ${formatNumber(currentResponse.metrics.m_f, 1)}`,
+      `I_theory = ${formatNumber(currentResponse.metrics.I_theory, 2)} A`,
+      `I_measured = ${formatNumber(currentResponse.metrics.I_measured, 2)} A`,
+      `THD_V = ${formatNumber(currentResponse.metrics.THD_V, 1)} %`,
+      `THD_I = ${formatNumber(currentResponse.metrics.THD_I, 1)} %`,
+    ];
+    theoryRows.forEach((row, rowIndex) => context.fillText(row, 980, 116 + rowIndex * 34));
+
+    const slots = [
+      [60, 190],
+      [820, 190],
+      [60, 910],
+      [820, 910],
+      [60, 1630],
+    ];
+    images.forEach((image, imageIndex) => {
+      const [x, y] = slots[imageIndex];
+      context.drawImage(image, x, y, 700, 420);
+    });
+
+    if (baselineResponse) {
+      context.font = "bold 24px Aptos";
+      context.fillText("Baseline Compare", 820, 1630);
+      context.font = "22px Aptos";
+      const compareRows = [
+        `ΔV1 = ${formatNumber(currentResponse.metrics.V1_pk - baselineResponse.metrics.V1_pk, 1)} V`,
+        `ΔI1 = ${formatNumber(currentResponse.metrics.I1_pk - baselineResponse.metrics.I1_pk, 2)} A`,
+        `ΔTHD_V = ${formatNumber(currentResponse.metrics.THD_V - baselineResponse.metrics.THD_V, 1)} %`,
+        `ΔTHD_I = ${formatNumber(currentResponse.metrics.THD_I - baselineResponse.metrics.THD_I, 1)} %`,
+      ];
+      compareRows.forEach((row, rowIndex) => context.fillText(row, 820, 1680 + rowIndex * 34));
+    }
+
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        setStatus("PNG保存失敗", "PNG の生成に失敗しました。", true);
+        return;
+      }
+      downloadBlob(
+        `web_pulse_export_${new Date().toISOString().replace(/[:.]/g, "-")}.png`,
+        blob,
+      );
+      setStatus("PNG保存", "ダッシュボードを PNG として保存しました。");
+    }, "image/png");
+  } catch (error) {
+    console.error(error);
+    setStatus("PNG保存失敗", "PNG の出力処理に失敗しました。", true);
+  }
 }
 
 async function fetchScenarios() {
@@ -534,6 +541,7 @@ async function fetchScenarios() {
     throw new Error(`scenario fetch failed: ${response.status}`);
   }
   scenarioPresets = await response.json();
+  scenarioFetchFailed = false;
   renderScenarioGuide();
 }
 
@@ -558,8 +566,11 @@ async function runSimulation() {
     renderComparisonPanel();
     renderPlots(data);
     setStatus(
-      "API 接続中",
-      `PWM=${data.meta.pwm_mode}, FFT=${data.meta.fft_target}, API=${data.meta.simulation_api_version}`,
+      scenarioFetchFailed ? "API 接続中 / ガイド取得失敗" : "API 接続中",
+      scenarioFetchFailed
+        ? `PWM=${data.meta.pwm_mode}, FFT=${data.meta.fft_target}, API=${data.meta.simulation_api_version} / シナリオ取得失敗`
+        : `PWM=${data.meta.pwm_mode}, FFT=${data.meta.fft_target}, API=${data.meta.simulation_api_version}`,
+      scenarioFetchFailed,
     );
   } catch (error) {
     console.error(error);
@@ -577,6 +588,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     await fetchScenarios();
   } catch (error) {
     console.error(error);
+    scenarioFetchFailed = true;
     setStatus("API エラー", "シナリオガイドを取得できませんでした。", true);
   }
   scheduleSimulation();
