@@ -96,4 +96,23 @@ SCENARIO_PRESETS = [
         "fft_target": "voltage",
         "fft_window": "hann",
     },
+    {
+        "label": "⑥SVPWM比較",
+        "hint": "SVPWM は線形範囲が拡張され、同一 V_dc でより高い基本波が得られる。",
+        "focus": "Natural と SVPWM の m_a 上限と基本波振幅を比較する。",
+        "sliders": {
+            "V_dc": 300.0,
+            "V_ll": 180.0,
+            "f": 50.0,
+            "f_c": 5.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 10.0,
+        },
+        "pwm_mode": "svpwm",
+        "overmod_view": False,
+        "fft_target": "voltage",
+        "fft_window": "hann",
+    },
 ]

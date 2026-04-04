@@ -11,7 +11,7 @@ THIRD_HARMONIC_LIMIT = 2.0 / np.sqrt(3.0)
 
 def _validate_reference_mode(mode: str) -> None:
     """参照生成モード名を検証する."""
-    valid_modes = {"sinusoidal", "third_harmonic"}
+    valid_modes = {"sinusoidal", "third_harmonic", "svpwm"}
     if mode not in valid_modes:
         raise ValueError(f"Unsupported reference mode: {mode}")
 
@@ -34,6 +34,7 @@ def generate_reference(
         mode: 参照生成方式
             sinusoidal: 正弦波参照
             third_harmonic: 三次高調波注入参照
+            svpwm: 空間ベクトルPWM相当の零相注入参照
         limit_linear: True の場合は線形変調上限でクランプする
 
     Returns:
@@ -44,7 +45,7 @@ def generate_reference(
     V_ph_peak = V_ll * np.sqrt(2.0) / np.sqrt(3.0)  # [V] 相電圧ピーク値 (V_ll は RMS)
     m_a = 2.0 * V_ph_peak / V_dc                      # 変調率
     if limit_linear:
-        m_a_limit = THIRD_HARMONIC_LIMIT if mode == "third_harmonic" else 1.0
+        m_a_limit = THIRD_HARMONIC_LIMIT if mode in {"third_harmonic", "svpwm"} else 1.0
         m_a = min(m_a, m_a_limit)  # 線形変調範囲でクランプ
 
     omega = 2.0 * np.pi * f   # [rad/s] 角周波数
@@ -58,6 +59,15 @@ def generate_reference(
         v_u = m_a * phase_u + zero_sequence
         v_v = m_a * phase_v + zero_sequence
         v_w = m_a * phase_w + zero_sequence
+    elif mode == "svpwm":
+        # 空間ベクトルPWMの等価零相注入: 各時刻で max/min の中点を相殺する。
+        phase_stack = m_a * np.vstack((phase_u, phase_v, phase_w))
+        v_max = np.max(phase_stack, axis=0)
+        v_min = np.min(phase_stack, axis=0)
+        zero_sequence = -0.5 * (v_max + v_min)
+        v_u = phase_stack[0] + zero_sequence
+        v_v = phase_stack[1] + zero_sequence
+        v_w = phase_stack[2] + zero_sequence
     else:
         v_u = m_a * phase_u
         v_v = m_a * phase_v

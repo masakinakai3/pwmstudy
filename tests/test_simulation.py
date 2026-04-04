@@ -167,6 +167,29 @@ class TestReferenceGenerator:
         assert THIRD_HARMONIC_LIMIT > 1.0
         assert fund_thi > fund_sin * 1.05
 
+    def test_svpwm_adds_common_mode_within_linear_range(self) -> None:
+        """SVPWM は零相注入を伴い、各相の振幅を線形範囲で抑える."""
+        m_a_target = 1.05
+        V_ll_target = m_a_target * V_DC * np.sqrt(3.0) / (2.0 * np.sqrt(2.0))
+
+        v_u_sin, v_v_sin, _ = generate_reference(V_ll_target, F, V_DC, T)
+        v_u_svpwm, v_v_svpwm, v_w_svpwm = generate_reference(
+            V_ll_target,
+            F,
+            V_DC,
+            T,
+            mode="svpwm",
+        )
+        common_mode = (v_u_svpwm + v_v_svpwm + v_w_svpwm) / 3.0
+        fund_sin = analyze_spectrum(v_u_sin - v_v_sin, DT_ACTUAL, F)["fundamental_mag"]
+        fund_svpwm = analyze_spectrum(v_u_svpwm - v_v_svpwm, DT_ACTUAL, F)["fundamental_mag"]
+
+        assert np.max(np.abs(common_mode)) > 0.01
+        assert np.max(np.abs(v_u_svpwm)) <= 1.0 + 1e-10
+        assert np.max(np.abs(v_v_svpwm)) <= 1.0 + 1e-10
+        assert np.max(np.abs(v_w_svpwm)) <= 1.0 + 1e-10
+        assert fund_svpwm > fund_sin * 1.03
+
 
 class TestCarrierGenerator:
     """キャリア生成モジュールのテスト."""
@@ -626,10 +649,10 @@ class TestScenarioPresets:
                 )
 
     def test_scenario_count(self) -> None:
-        """シナリオ数が仕様の5件であることを確認する."""
+        """シナリオ数が仕様の6件であることを確認する."""
         from ui.visualizer import SCENARIO_PRESETS
 
-        assert len(SCENARIO_PRESETS) == 5
+        assert len(SCENARIO_PRESETS) == 6
 
 
 class TestSimulationRunnerContract:
@@ -966,6 +989,31 @@ class TestWebApi:
         data = response.json()
         assert data["meta"]["fft_target"] == "i_u"
         assert data["fft"]["target"] == "current"
+        assert data["metrics"]["m_a_limit"] > 1.0
+
+    def test_simulate_endpoint_accepts_svpwm_mode(self) -> None:
+        """SVPWM モードを受理し、線形上限が拡張される."""
+        client = TestClient(app)
+        payload = {
+            "V_dc": 300.0,
+            "V_ll_rms": 180.0,
+            "f": 50.0,
+            "f_c": 5000.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 0.01,
+            "pwm_mode": "svpwm",
+            "overmod_view": False,
+            "fft_target": "v_uv",
+            "fft_window": "hann",
+        }
+
+        response = client.post("/simulate", json=payload)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["meta"]["pwm_mode"] == "svpwm"
         assert data["metrics"]["m_a_limit"] > 1.0
 
     def test_simulate_endpoint_accepts_overmod_checkbox(self) -> None:

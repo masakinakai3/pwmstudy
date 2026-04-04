@@ -33,6 +33,7 @@ PWM_MODE_LABELS = {
     "natural": "Natural Sampling",
     "regular": "Regular Sampling",
     "third_harmonic": "Third Harmonic Injection",
+    "svpwm": "Space Vector PWM",
 }
 FFT_TARGET_LABELS = {
     "voltage": "Line Voltage v_uv",

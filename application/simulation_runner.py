@@ -29,6 +29,7 @@ PWM_MODE_LABELS = {
     "natural": "Natural Sampling",
     "regular": "Regular Sampling",
     "third_harmonic": "Third Harmonic Injection",
+    "svpwm": "Space Vector PWM",
 }
 FFT_TARGET_LABELS = {
     "voltage": "Line Voltage v_uv",
@@ -174,7 +175,12 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
     t = np.linspace(0.0, T_sim, n_points)
     dt_actual = t[1] - t[0]
 
-    reference_mode = "third_harmonic" if pwm_mode == "third_harmonic" else "sinusoidal"
+    if pwm_mode == "third_harmonic":
+        reference_mode = "third_harmonic"
+    elif pwm_mode == "svpwm":
+        reference_mode = "svpwm"
+    else:
+        reference_mode = "sinusoidal"
     sampling_mode = "regular" if pwm_mode == "regular" else "natural"
     limit_linear = not overmod_view
 
@@ -256,7 +262,7 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
 
     V_ph_peak = V_ll * np.sqrt(2.0) / np.sqrt(3.0)  # [V] V_ll は RMS
     m_a_raw = 2.0 * V_ph_peak / V_dc
-    m_a_limit = THIRD_HARMONIC_LIMIT if pwm_mode == "third_harmonic" else 1.0
+    m_a_limit = THIRD_HARMONIC_LIMIT if pwm_mode in {"third_harmonic", "svpwm"} else 1.0
     m_a = min(m_a_raw, m_a_limit) if limit_linear else m_a_raw
 
     result = {

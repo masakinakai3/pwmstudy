@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-PwmMode = Literal["natural", "regular", "third_harmonic"]
+PwmMode = Literal["natural", "regular", "third_harmonic", "svpwm"]
 ApiFftTarget = Literal["v_uv", "i_u"]
 FftWindow = Literal["hann", "rectangular"]
 
