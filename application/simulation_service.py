@@ -13,6 +13,7 @@ def normalize_ui_display_params(
     pwm_mode: str,
     fft_target: str,
     fft_window: str,
+    overmod_view: bool = False,
 ) -> dict[str, object]:
     """UI 表示単位のパラメータを SI 単位系へ変換する.
 
@@ -23,6 +24,7 @@ def normalize_ui_display_params(
         pwm_mode: PWM 方式。
         fft_target: FFT 表示対象。
         fft_window: FFT 窓関数。
+        overmod_view: True のとき線形変調クランプを無効化する。
 
     Returns:
         simulation runner へ渡す SI 単位系の辞書。
@@ -37,6 +39,7 @@ def normalize_ui_display_params(
         "R": float(display_params["R"]),
         "L": float(display_params["L"]) / 1000.0,
         "pwm_mode": pwm_mode,
+        "overmod_view": bool(overmod_view),
         "fft_target": fft_target,
         "fft_window": fft_window,
     }

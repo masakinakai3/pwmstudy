@@ -10,7 +10,7 @@ from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
-from matplotlib.widgets import Button, RadioButtons, Slider
+from matplotlib.widgets import Button, CheckButtons, RadioButtons, Slider
 
 from application import (
     SCENARIO_PRESETS,
@@ -33,7 +33,6 @@ PWM_MODE_LABELS = {
     "natural": "Natural Sampling",
     "regular": "Regular Sampling",
     "third_harmonic": "Third Harmonic Injection",
-    "natural_overmod": "Natural Sampling (Overmod View)",
 }
 FFT_TARGET_LABELS = {
     "voltage": "Line Voltage v_uv",
@@ -76,6 +75,10 @@ class InverterVisualizer:
         """
         self._params = dict(default_params)
         self._pwm_mode = self._params.get("pwm_mode", "natural")
+        self._overmod_view = bool(self._params.get("overmod_view", False))
+        if self._pwm_mode == "natural_overmod":
+            self._pwm_mode = "natural"
+            self._overmod_view = True
         self._fft_target = self._params.get("fft_target", "voltage")
         self._fft_window = self._params.get("fft_window", "hann")
         plt.rcParams["font.family"] = _select_ui_font_family()
@@ -136,7 +139,7 @@ class InverterVisualizer:
 
     def _setup_mode_selector(self) -> None:
         """PWM 方式選択 UI を配置する."""
-        ax = self._fig.add_axes([0.81, 0.04, 0.16, 0.15])
+        ax = self._fig.add_axes([0.81, 0.06, 0.16, 0.13])
         ax.set_title("PWM Mode", fontsize=9)
 
         labels = list(PWM_MODE_LABELS.values())
@@ -147,9 +150,19 @@ class InverterVisualizer:
         }
         self._mode_buttons.on_clicked(self._update_mode)
 
+        ax_overmod = self._fig.add_axes([0.81, 0.02, 0.16, 0.035])
+        ax_overmod.set_title("", fontsize=8)
+        self._overmod_check = CheckButtons(ax_overmod, ["Overmod View"], [self._overmod_view])
+        self._overmod_check.on_clicked(self._update_overmod_view)
+
     def _update_mode(self, label: str) -> None:
         """PWM 方式選択のコールバック."""
         self._pwm_mode = self._mode_label_to_key[label]
+        self._update(None)
+
+    def _update_overmod_view(self, label: str) -> None:
+        """Overmod View 切替のコールバック."""
+        self._overmod_view = bool(self._overmod_check.get_status()[0])
         self._update(None)
 
     def _setup_fft_controls(self) -> None:
@@ -263,6 +276,10 @@ class InverterVisualizer:
             # フラグにより _update は実行されず、モード変数のみ更新される
             mode_idx = list(PWM_MODE_LABELS).index(scenario["pwm_mode"])
             self._mode_buttons.set_active(mode_idx)
+            scenario_overmod = bool(scenario.get("overmod_view", False))
+            current_overmod = bool(self._overmod_check.get_status()[0])
+            if scenario_overmod != current_overmod:
+                self._overmod_check.set_active(0)
             fft_target_idx = list(FFT_TARGET_LABELS).index(scenario["fft_target"])
             self._fft_target_buttons.set_active(fft_target_idx)
             fft_window_idx = list(FFT_WINDOW_LABELS).index(scenario["fft_window"])
@@ -439,6 +456,7 @@ class InverterVisualizer:
             self._pwm_mode,
             self._fft_target,
             self._fft_window,
+            overmod_view=self._overmod_view,
         )
 
     def _run_simulation(

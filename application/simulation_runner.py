@@ -29,7 +29,6 @@ PWM_MODE_LABELS = {
     "natural": "Natural Sampling",
     "regular": "Regular Sampling",
     "third_harmonic": "Third Harmonic Injection",
-    "natural_overmod": "Natural Sampling (Overmod View)",
 }
 FFT_TARGET_LABELS = {
     "voltage": "Line Voltage v_uv",
@@ -155,8 +154,14 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
     R = float(params["R"])
     L = float(params["L"])
     pwm_mode = str(params["pwm_mode"])
+    overmod_view = bool(params.get("overmod_view", False))
     fft_target = str(params["fft_target"])
     fft_window = str(params["fft_window"])
+
+    # 後方互換: 旧モード natural_overmod は natural + overmod_view=True として扱う
+    if pwm_mode == "natural_overmod":
+        pwm_mode = "natural"
+        overmod_view = True
 
     tau = L / R
     T_cycle = 1.0 / f
@@ -171,7 +176,7 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
 
     reference_mode = "third_harmonic" if pwm_mode == "third_harmonic" else "sinusoidal"
     sampling_mode = "regular" if pwm_mode == "regular" else "natural"
-    limit_linear = pwm_mode != "natural_overmod"
+    limit_linear = not overmod_view
 
     v_u_ref, v_v_ref, v_w_ref = generate_reference(
         V_ll,
@@ -260,6 +265,7 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
             "pwm_mode": pwm_mode,
             "pwm_mode_label": PWM_MODE_LABELS[pwm_mode],
             "sampling_mode": sampling_mode,
+            "overmod_view": overmod_view,
             "fft_target": fft_target,
             "fft_target_label": FFT_TARGET_LABELS[fft_target],
             "fft_window": fft_window,
@@ -326,6 +332,7 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
             "V_on": V_on,
             "R": R,
             "L": L,
+            "overmod_view": overmod_view,
             "dt_actual": dt_actual,
             "m_a": m_a,
             "m_a_raw": m_a_raw,
@@ -363,6 +370,7 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
         "pwm_mode": pwm_mode,
         "pwm_mode_label": PWM_MODE_LABELS[pwm_mode],
         "sampling_mode": sampling_mode,
+        "overmod_view": overmod_view,
         "fft_target": fft_target,
         "fft_target_label": FFT_TARGET_LABELS[fft_target],
         "fft_window": fft_window,
@@ -417,6 +425,7 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
             "simulation_api_version": meta["simulation_api_version"],
             "pwm_mode": meta["pwm_mode"],
             "sampling_mode": meta["sampling_mode"],
+            "overmod_view": bool(meta["overmod_view"]),
             "fft_target": meta["fft_target"],
             "fft_window": meta["fft_window"],
             "points_per_carrier": int(meta["points_per_carrier"]),
@@ -432,6 +441,7 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
             "V_on": float(metrics["V_on"]),
             "R": float(metrics["R"]),
             "L": float(metrics["L"]),
+            "overmod_view": bool(metrics["overmod_view"]),
         },
         "time": _to_serializable_list(display_time[time_indices]),
         "reference": {
@@ -481,6 +491,7 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
             "m_a": float(metrics["m_a"]),
             "m_a_raw": float(metrics["m_a_raw"]),
             "m_a_limit": float(metrics["m_a_limit"]),
+            "limit_linear": bool(metrics["limit_linear"]),
             "m_f": float(metrics["m_f"]),
             "Z": float(metrics["Z"]),
             "phi": float(metrics["phi"]),

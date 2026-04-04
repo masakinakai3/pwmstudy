@@ -583,6 +583,7 @@ class TestScenarioPresets:
             assert "hint" in scenario, "hint キーがない"
             assert "sliders" in scenario, "sliders キーがない"
             assert "pwm_mode" in scenario, "pwm_mode キーがない"
+            assert "overmod_view" in scenario, "overmod_view キーがない"
             assert "fft_target" in scenario, "fft_target キーがない"
             assert "fft_window" in scenario, "fft_window キーがない"
             assert set(scenario["sliders"].keys()) == required_slider_keys, (
@@ -596,6 +597,9 @@ class TestScenarioPresets:
             )
             assert scenario["fft_window"] in FFT_WINDOW_LABELS, (
                 f"シナリオ '{scenario['label']}' の fft_window が無効"
+            )
+            assert isinstance(scenario["overmod_view"], bool), (
+                f"シナリオ '{scenario['label']}' の overmod_view が bool でない"
             )
 
     def test_scenario_slider_values_in_valid_range(self) -> None:
@@ -715,8 +719,8 @@ class TestSimulationRunnerContract:
         assert response["metrics"]["THD_I"] >= 0.0
         assert response["metrics"]["m_a_limit"] > 1.0
 
-    def test_natural_overmod_mode_reports_unclamped_m_a(self) -> None:
-        """natural_overmod では m_a が線形上限でクランプされない."""
+    def test_overmod_view_reports_unclamped_m_a(self) -> None:
+        """overmod_view=True では m_a が線形上限でクランプされない."""
         params = {
             "V_dc": 300.0,
             "V_ll": 220.0,
@@ -726,14 +730,16 @@ class TestSimulationRunnerContract:
             "V_on": 0.0,
             "R": 10.0,
             "L": 0.01,
-            "pwm_mode": "natural_overmod",
+            "pwm_mode": "natural",
+            "overmod_view": True,
             "fft_target": "voltage",
             "fft_window": "hann",
         }
 
         results = run_simulation(params)
 
-        assert results["meta"]["pwm_mode"] == "natural_overmod"
+        assert results["meta"]["pwm_mode"] == "natural"
+        assert results["meta"]["overmod_view"] is True
         assert results["metrics"]["limit_linear"] is False
         assert results["metrics"]["m_a"] > 1.0
         assert results["metrics"]["m_a"] == results["metrics"]["m_a_raw"]
@@ -758,6 +764,7 @@ class TestApplicationServices:
             "regular",
             "current",
             "hann",
+            overmod_view=True,
         )
 
         assert params["V_dc"] == 300.0
@@ -766,6 +773,7 @@ class TestApplicationServices:
         assert params["t_d"] == 4.0e-6
         assert params["L"] == 0.01
         assert params["pwm_mode"] == "regular"
+        assert params["overmod_view"] is True
         assert params["fft_target"] == "current"
 
     def test_build_export_payload_uses_structured_results(self) -> None:
@@ -960,8 +968,8 @@ class TestWebApi:
         assert data["fft"]["target"] == "current"
         assert data["metrics"]["m_a_limit"] > 1.0
 
-    def test_simulate_endpoint_accepts_overmod_mode(self) -> None:
-        """overmod 観察モードを受理し、m_a が 1 を超えるケースを返す."""
+    def test_simulate_endpoint_accepts_overmod_checkbox(self) -> None:
+        """overmod_view=True を受理し、m_a が 1 を超えるケースを返す."""
         client = TestClient(app)
         payload = {
             "V_dc": 300.0,
@@ -972,7 +980,8 @@ class TestWebApi:
             "V_on": 0.0,
             "R": 10.0,
             "L": 0.01,
-            "pwm_mode": "natural_overmod",
+            "pwm_mode": "natural",
+            "overmod_view": True,
             "fft_target": "v_uv",
             "fft_window": "hann",
         }
@@ -981,5 +990,6 @@ class TestWebApi:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["meta"]["pwm_mode"] == "natural_overmod"
+        assert data["meta"]["pwm_mode"] == "natural"
+        assert data["meta"]["overmod_view"] is True
         assert data["metrics"]["m_a"] > 1.0

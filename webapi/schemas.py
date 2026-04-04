@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-PwmMode = Literal["natural", "regular", "third_harmonic", "natural_overmod"]
+PwmMode = Literal["natural", "regular", "third_harmonic"]
 ApiFftTarget = Literal["v_uv", "i_u"]
 FftWindow = Literal["hann", "rectangular"]
 
@@ -24,6 +24,7 @@ class SimulationRequest(BaseModel):
     R: float = Field(ge=0.1, le=100.0)
     L: float = Field(ge=0.1e-3, le=100e-3)
     pwm_mode: PwmMode = "natural"
+    overmod_view: bool = False
     fft_target: ApiFftTarget = "v_uv"
     fft_window: FftWindow = "hann"
 
@@ -41,6 +42,7 @@ class SimulationRequest(BaseModel):
             "R": self.R,
             "L": self.L,
             "pwm_mode": self.pwm_mode,
+            "overmod_view": self.overmod_view,
             "fft_target": fft_target,
             "fft_window": self.fft_window,
         }

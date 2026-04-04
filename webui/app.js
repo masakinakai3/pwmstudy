@@ -8,6 +8,7 @@ const defaultDisplayValues = {
   R: 10.0,
   L_mh: 10.0,
   pwm_mode: "natural",
+  overmod_view: false,
   fft_target: "v_uv",
   fft_window: "hann",
 };
@@ -135,16 +136,18 @@ function initializeControls() {
   });
 
   document.getElementById("pwmMode").value = defaultDisplayValues.pwm_mode;
+  document.getElementById("overmodView").checked = defaultDisplayValues.overmod_view;
   document.getElementById("fftTarget").value = defaultDisplayValues.fft_target;
   document.getElementById("fftWindow").value = defaultDisplayValues.fft_window;
 
-  ["pwmMode", "fftTarget", "fftWindow"].forEach((id) => {
+  ["pwmMode", "overmodView", "fftTarget", "fftWindow"].forEach((id) => {
     document.getElementById(id).addEventListener("change", scheduleSimulation);
   });
 
   document.getElementById("resetButton").addEventListener("click", () => {
     applyDisplayValues(defaultDisplayValues);
     document.getElementById("pwmMode").value = defaultDisplayValues.pwm_mode;
+    document.getElementById("overmodView").checked = defaultDisplayValues.overmod_view;
     document.getElementById("fftTarget").value = defaultDisplayValues.fft_target;
     document.getElementById("fftWindow").value = defaultDisplayValues.fft_window;
     renderScenarioGuide();
@@ -179,6 +182,7 @@ function collectPayload() {
     R: values.R,
     L: values.L_mh / 1000.0,
     pwm_mode: document.getElementById("pwmMode").value,
+    overmod_view: document.getElementById("overmodView").checked,
     fft_target: document.getElementById("fftTarget").value,
     fft_window: document.getElementById("fftWindow").value,
   };
@@ -298,6 +302,7 @@ function applyScenario(index) {
     L_mh: scenario.sliders.L,
   });
   document.getElementById("pwmMode").value = scenario.pwm_mode;
+  document.getElementById("overmodView").checked = Boolean(scenario.overmod_view);
   document.getElementById("fftTarget").value = scenario.fft_target === "current" ? "i_u" : "v_uv";
   document.getElementById("fftWindow").value = scenario.fft_window;
   renderScenarioGuide(index);
@@ -495,7 +500,11 @@ async function exportDashboardPng() {
     context.fillText("Three-Phase PWM Inverter Report", 60, 70);
     context.font = "24px Aptos";
     context.fillText(`timestamp: ${new Date().toLocaleString()}`, 60, 112);
-    context.fillText(`PWM=${currentResponse.meta.pwm_mode}, FFT=${currentResponse.meta.fft_target}`, 60, 146);
+    context.fillText(
+      `PWM=${currentResponse.meta.pwm_mode}, Overmod=${currentResponse.meta.overmod_view ? "on" : "off"}, FFT=${currentResponse.meta.fft_target}`,
+      60,
+      146,
+    );
 
     context.font = "bold 26px Aptos";
     context.fillText("Theory Snapshot", 980, 70);
@@ -585,8 +594,8 @@ async function runSimulation() {
     setStatus(
       scenarioFetchFailed ? "API 接続中 / ガイド取得失敗" : "API 接続中",
       scenarioFetchFailed
-        ? `PWM=${data.meta.pwm_mode}, FFT=${data.meta.fft_target}, API=${data.meta.simulation_api_version} / シナリオ取得失敗`
-        : `PWM=${data.meta.pwm_mode}, FFT=${data.meta.fft_target}, API=${data.meta.simulation_api_version}`,
+        ? `PWM=${data.meta.pwm_mode}, Overmod=${data.meta.overmod_view ? "on" : "off"}, FFT=${data.meta.fft_target}, API=${data.meta.simulation_api_version} / シナリオ取得失敗`
+        : `PWM=${data.meta.pwm_mode}, Overmod=${data.meta.overmod_view ? "on" : "off"}, FFT=${data.meta.fft_target}, API=${data.meta.simulation_api_version}`,
       scenarioFetchFailed,
     );
   } catch (error) {
