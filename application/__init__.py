@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """アプリケーション層の公開インターフェース."""
 
 from application.scenario_presets import SCENARIO_PRESETS

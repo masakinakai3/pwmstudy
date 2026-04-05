@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """学習シナリオの共有定義."""
 
 SCENARIO_PRESETS = [

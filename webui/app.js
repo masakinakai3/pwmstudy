@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 const defaultDisplayValues = {
   V_dc: 300.0,
   V_ll_rms: 141.0,

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """UI 非依存のシミュレーション統合処理.
 
 Web API やデスクトップ UI の双方から再利用できるよう、

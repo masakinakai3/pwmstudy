@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """三角波キャリア生成モジュール.
 
 PWM比較に使用する対称三角波キャリア信号を生成する。

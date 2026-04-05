@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """FastAPI ベースの Web API MVP."""
 
 from __future__ import annotations

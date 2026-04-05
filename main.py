@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """三相PWMインバータ学習ソフトウェア — エントリポイント."""
 
 from ui.visualizer import InverterVisualizer

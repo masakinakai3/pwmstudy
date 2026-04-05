@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """シミュレーション利用時のアプリケーションサービス群."""
 
 from __future__ import annotations

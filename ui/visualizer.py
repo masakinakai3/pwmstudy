@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """三相PWMインバータ 波形表示UIモジュール.
 
 Matplotlib + widgets によるインタラクティブ波形表示を提供する。

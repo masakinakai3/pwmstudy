@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """変調方式の軸定義と正規化ヘルパー."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Web API の入出力スキーマ."""
 
 from __future__ import annotations

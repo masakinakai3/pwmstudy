@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """シミュレーションモジュールの物理妥当性テスト."""
 
 import numpy as np

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """RL負荷電流演算モジュール.
 
 相電圧を入力としてRL直列負荷の電流を厳密離散時間解で計算する。

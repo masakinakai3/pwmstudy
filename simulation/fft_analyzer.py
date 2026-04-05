@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """FFT解析モジュール.
 
 時間領域信号のスペクトル解析とTHD計算を提供する。
