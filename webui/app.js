@@ -495,6 +495,15 @@ function getSvpwmAnimationIntervalMs() {
   return Math.max(10, Math.round(SVPWM_ANIMATION_BASE_INTERVAL_MS / getSvpwmAnimationSpeed()));
 }
 
+function findCycleBoundaryIndex(windows, thresholdS) {
+  for (let i = 0; i < windows.length; i += 1) {
+    if (Number.isFinite(windows[i].start_s) && windows[i].start_s >= thresholdS) {
+      return i;
+    }
+  }
+  return windows.length;
+}
+
 function applySvpwmAnimationFrame(pointIndex) {
   if (!svpwmAnimationState) {
     return;
@@ -511,13 +520,33 @@ function applySvpwmAnimationFrame(pointIndex) {
   } = svpwmAnimationState;
 
   if (windows && windows.length > 0) {
-    const windowCount = windows.length;
-    const wrappedIndex = ((pointIndex % windowCount) + windowCount) % windowCount;
-    svpwmAnimationState.cursor = wrappedIndex;
-    const window = windows[wrappedIndex];
+    const firstCycleCount = Math.max(1, svpwmAnimationState.windowFirstCycleCount || windows.length);
+    const secondCycleStart = Math.max(0, svpwmAnimationState.windowSecondCycleStart || 0);
+    const secondCycleCount = Math.max(1, svpwmAnimationState.windowSecondCycleCount || windows.length);
+    const frameCount = Math.max(1, svpwmAnimationState.windowFrameCount || (firstCycleCount + secondCycleCount));
+    let logicalFrame = pointIndex;
+    if (logicalFrame < 0) {
+      // 逆方向ステップ時は [1周目 + 2周目] の範囲で折り返す
+      logicalFrame = ((logicalFrame % frameCount) + frameCount) % frameCount;
+    }
+    const displayFrame = logicalFrame < firstCycleCount
+      ? logicalFrame
+      : firstCycleCount + ((logicalFrame - firstCycleCount) % secondCycleCount);
+    svpwmAnimationState.cursor = logicalFrame;
+
+    let windowIndex = 0;
+    if (logicalFrame < firstCycleCount) {
+      windowIndex = logicalFrame;
+    } else {
+      windowIndex = secondCycleStart + ((logicalFrame - firstCycleCount) % secondCycleCount);
+    }
+
+    const clampedWindowIndex = Math.max(0, Math.min(windowIndex, windows.length - 1));
+    svpwmAnimationState.currentWindowIndex = clampedWindowIndex;
+    const window = windows[clampedWindowIndex];
     const trailX = [];
     const trailY = [];
-    for (let i = 0; i <= wrappedIndex; i += 1) {
+    for (let i = 0; i <= clampedWindowIndex; i += 1) {
       trailX.push(windows[i].alpha);
       trailY.push(windows[i].beta);
     }
@@ -528,13 +557,16 @@ function applySvpwmAnimationFrame(pointIndex) {
       [headTraceIndex],
     );
     if (typeof onFrame === "function") {
-      onFrame(wrappedIndex);
+      onFrame(clampedWindowIndex);
     }
+    // SECTION 2 カーソル線を更新
+    const cursorMs = window.start_s * 1000.0;
+    Plotly.restyle("switchingPlot", { x: [[cursorMs, cursorMs]] }, [3]);
     // スライダーを自動追従
     const slider = document.getElementById("svpwmTimeSlider");
     const timeLabel = document.getElementById("svpwmTimeLabel");
     if (slider) {
-      slider.value = String(Math.round((wrappedIndex / (windowCount - 1)) * 100));
+      slider.value = String(Math.round((displayFrame / Math.max(1, frameCount - 1)) * 100));
     }
     if (timeLabel && Number.isFinite(window.start_s)) {
       timeLabel.textContent = `${(window.start_s * 1000.0).toFixed(2)} ms`;
@@ -556,6 +588,12 @@ function applySvpwmAnimationFrame(pointIndex) {
     );
     if (typeof onFrame === "function") {
       onFrame(wrappedIndex);
+    }
+    // SECTION 2 カーソル線を更新（dense モード）
+    const { switchingTimeS } = svpwmAnimationState;
+    if (switchingTimeS && switchingTimeS[wrappedIndex] !== undefined) {
+      const cursorMsDense = switchingTimeS[wrappedIndex] * 1000.0;
+      Plotly.restyle("switchingPlot", { x: [[cursorMsDense, cursorMsDense]] }, [3]);
     }
     // スライダーを自動追従
     const slider = document.getElementById("svpwmTimeSlider");
@@ -613,7 +651,8 @@ function updateSvpwmTimeSliderValue(normalizedValue) {
   // スライダー値からアニメーション フレームインデックスを計算
   let targetIndex = 0;
   if (windows && windows.length > 0) {
-    targetIndex = Math.floor(normalizedValue * (windows.length - 1));
+    const frameCount = Math.max(1, svpwmAnimationState.windowFrameCount || windows.length);
+    targetIndex = Math.floor(normalizedValue * Math.max(0, frameCount - 1));
   } else {
     const n = Math.max(1, Math.min(alphaSeries.length, betaSeries.length));
     targetIndex = Math.floor(normalizedValue * (n - 1));
@@ -625,8 +664,9 @@ function updateSvpwmTimeSliderValue(normalizedValue) {
   // 時刻ラベルを更新
   const timeLabel = document.getElementById("svpwmTimeLabel");
   if (timeLabel) {
-    if (windows && windows[targetIndex] && Number.isFinite(windows[targetIndex].start_s)) {
-      const timeMs = (windows[targetIndex].start_s * 1000.0).toFixed(2);
+    const currentWindowIndex = svpwmAnimationState.currentWindowIndex;
+    if (windows && windows[currentWindowIndex] && Number.isFinite(windows[currentWindowIndex].start_s)) {
+      const timeMs = (windows[currentWindowIndex].start_s * 1000.0).toFixed(2);
       timeLabel.textContent = `${timeMs} ms`;
     } else {
       timeLabel.textContent = `フレーム ${targetIndex + 1}`;
@@ -644,12 +684,33 @@ function startSvpwmVectorAnimation(
   windows = null,
   switchingPeriod = null,
   eventTimesRelS = null,
+  switchingTimeS = null,
 ) {
   stopSvpwmVectorAnimation();
 
   const n = windows ? windows.length : Math.min(alphaSeries.length, betaSeries.length);
   if (n < 1) {
     return;
+  }
+
+  let windowFirstCycleCount = n;
+  let windowSecondCycleStart = 0;
+  let windowSecondCycleCount = n;
+  if (windows && windows.length > 1 && switchingTimeS && switchingTimeS.length > 1) {
+    const cycleDurationS = switchingTimeS[switchingTimeS.length - 1] - switchingTimeS[0];
+    const firstWindowStartS = windows[0].start_s;
+    if (Number.isFinite(cycleDurationS) && cycleDurationS > 0.0 && Number.isFinite(firstWindowStartS)) {
+      const secondCycleStartS = firstWindowStartS + cycleDurationS;
+      const thirdCycleStartS = firstWindowStartS + (2.0 * cycleDurationS);
+      const secondCycleStartIndex = findCycleBoundaryIndex(windows, secondCycleStartS);
+      const thirdCycleStartIndex = findCycleBoundaryIndex(windows, thirdCycleStartS);
+      const measuredFirstCycleCount = Math.max(1, Math.min(secondCycleStartIndex, windows.length));
+      const measuredSecondCycleStart = Math.max(0, Math.min(secondCycleStartIndex, windows.length - 1));
+      const measuredSecondCycleCount = Math.max(1, thirdCycleStartIndex - measuredSecondCycleStart);
+      windowFirstCycleCount = measuredFirstCycleCount;
+      windowSecondCycleStart = measuredSecondCycleStart;
+      windowSecondCycleCount = measuredSecondCycleCount;
+    }
   }
 
   svpwmAnimationState = {
@@ -662,8 +723,14 @@ function startSvpwmVectorAnimation(
     windows,
     cursor: 0,
     stride: windows ? 1 : Math.max(1, Math.floor(n / 80)),
+    windowFirstCycleCount,
+    windowSecondCycleStart,
+    windowSecondCycleCount,
+    windowFrameCount: windowFirstCycleCount + windowSecondCycleCount,
+    currentWindowIndex: 0,
     switchingPeriod,
     eventTimesRelS,
+    switchingTimeS,
   };
   svpwmAnimationPaused = false;
   updateSvpwmAnimationPlayPauseLabel();
@@ -1305,6 +1372,7 @@ function renderPlots(data) {
       windowsToAnimate,
       svpwmSnapshot.switchingPeriod,
       svpwmSnapshot.event_times_rel_s,
+      oneCycleTime,
     );
     const initialWindow = windowsToAnimate && windowsToAnimate[0] ? windowsToAnimate[0] : null;
     if (initialWindow) {
@@ -1446,7 +1514,7 @@ function renderPlots(data) {
     }
   }
 
-  Plotly.react("switchingPlot", [
+  const switchingTraces = [
     {
       x: switchingTimeMsDisplay,
       y: switchingUDisplay.map((value) => value + 4),
@@ -1474,7 +1542,20 @@ function renderPlots(data) {
       line: { color: "#6a5495", width: 3, shape: "hv" },
       hovertemplate: "S_w: %{customdata}<extra></extra>",
     },
-  ], {
+  ];
+  if (inSpaceVectorMode) {
+    const initCursorMs = switchingTimeMsDisplay.length > 0 ? switchingTimeMsDisplay[0] : 0;
+    switchingTraces.push({
+      x: [initCursorMs, initCursorMs],
+      y: [-0.4, 5.4],
+      mode: "lines",
+      name: "cursor",
+      showlegend: false,
+      hoverinfo: "skip",
+      line: { color: "rgba(24, 33, 38, 0.75)", width: 1.5, dash: "dot" },
+    });
+  }
+  Plotly.react("switchingPlot", switchingTraces, {
     ...plotTheme,
     title: switchingTitle,
     xaxis: { ...plotTheme.xaxis, title: "時間 [ms]" },
