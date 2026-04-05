@@ -30,8 +30,10 @@ let svpwmAnimationState = null;
 let svpwmAnimationPaused = false;
 let simulationRequestSeq = 0;
 let activeSimulationController = null;
+let scenarioProgressStore = {};
 
 const SVPWM_ANIMATION_BASE_INTERVAL_MS = 40;
+const SCENARIO_PROGRESS_STORAGE_KEY = "pwmLearningScenarioProgressV1";
 
 const modulationModeHints = {
   carrier: "三角波比較: 正弦波基準をキャリアと比較する基本方式です。",
@@ -435,6 +437,39 @@ function setStatus(badgeText, message, isError = false) {
   detail.textContent = message;
   badge.style.background = isError ? "rgba(193, 79, 44, 0.16)" : "rgba(78, 122, 118, 0.12)";
   badge.style.color = isError ? "#c14f2c" : "#4e7a76";
+}
+
+function loadScenarioProgressStore() {
+  try {
+    const raw = window.localStorage.getItem(SCENARIO_PROGRESS_STORAGE_KEY);
+    if (!raw) {
+      scenarioProgressStore = {};
+      return;
+    }
+    const parsed = JSON.parse(raw);
+    scenarioProgressStore = parsed && typeof parsed === "object" ? parsed : {};
+  } catch (error) {
+    console.error(error);
+    scenarioProgressStore = {};
+  }
+}
+
+function saveScenarioProgressStore() {
+  try {
+    window.localStorage.setItem(
+      SCENARIO_PROGRESS_STORAGE_KEY,
+      JSON.stringify(scenarioProgressStore),
+    );
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function makeScenarioProgressKey(scenario, index) {
+  if (scenario && typeof scenario.label === "string" && scenario.label.trim() !== "") {
+    return scenario.label;
+  }
+  return `scenario-${index}`;
 }
 
 function stopSvpwmVectorAnimation() {
@@ -917,6 +952,7 @@ function initializeControls() {
   });
   document.getElementById("exportPngButton").addEventListener("click", exportDashboardPng);
   document.getElementById("copyShareUrlButton").addEventListener("click", copyShareUrl);
+  document.getElementById("resetScenarioProgressButton").addEventListener("click", resetScenarioProgress);
   document.getElementById("importJsonFile").addEventListener("change", onImportJsonFileChange);
 
   // SVPWM time slider
@@ -1498,12 +1534,24 @@ function evaluateScenarioObservation(observation) {
   const metricName = observation?.metric;
   const comparison = observation?.comparison;
   if (!metricName || !comparison) {
-    return { text, statusLabel: "観測待ち", statusClass: "pending", reason: "判定条件が未設定です。" };
+    return {
+      text,
+      statusLabel: "観測待ち",
+      statusClass: "pending",
+      reason: "判定条件が未設定です。",
+      passed: false,
+    };
   }
 
   const currentValue = getScenarioMetricValue(metricName, currentResponse);
   if (!Number.isFinite(currentValue)) {
-    return { text, statusLabel: "未判定", statusClass: "pending", reason: "対象メトリクスを算出できませんでした。" };
+    return {
+      text,
+      statusLabel: "未判定",
+      statusClass: "pending",
+      reason: "対象メトリクスを算出できませんでした。",
+      passed: false,
+    };
   }
 
   let passed = false;
@@ -1548,6 +1596,7 @@ function evaluateScenarioObservation(observation) {
         statusLabel: "未判定",
         statusClass: "pending",
         reason: "ベースライン未設定のため差分判定できません。",
+        passed: false,
       };
     }
     const delta = currentValue - baselineValue;
@@ -1561,6 +1610,7 @@ function evaluateScenarioObservation(observation) {
       statusLabel: "未判定",
       statusClass: "pending",
       reason: "未対応の比較演算です。",
+      passed: false,
     };
   }
 
@@ -1569,7 +1619,108 @@ function evaluateScenarioObservation(observation) {
     statusLabel: passed ? "達成" : "未達",
     statusClass: passed ? "ok" : "ng",
     reason: passed ? "" : reason,
+    passed,
   };
+}
+
+function computeScenarioProgress(expectedList) {
+  const items = Array.isArray(expectedList) ? expectedList : [];
+  const evaluated = items.map((observation) => evaluateScenarioObservation(observation));
+  const total = evaluated.length;
+  const passed = evaluated.filter((item) => item.statusClass === "ok").length;
+  const pending = evaluated.filter((item) => item.statusClass === "pending").length;
+  const failed = Math.max(0, total - passed - pending);
+  return {
+    total,
+    passed,
+    pending,
+    failed,
+    ratio: total > 0 ? passed / total : 0,
+  };
+}
+
+function updateActiveScenarioProgress() {
+  if (!currentResponse || activeScenarioIndex === null || !scenarioPresets[activeScenarioIndex]) {
+    return;
+  }
+
+  const scenario = scenarioPresets[activeScenarioIndex];
+  const progress = computeScenarioProgress(scenario.expected_observation);
+  const progressKey = makeScenarioProgressKey(scenario, activeScenarioIndex);
+  const currentEntry = scenarioProgressStore[progressKey] || {};
+  const bestRatio = Math.max(Number(currentEntry.bestRatio) || 0.0, progress.ratio);
+
+  scenarioProgressStore[progressKey] = {
+    scenarioLabel: scenario.label,
+    lastRatio: progress.ratio,
+    bestRatio,
+    lastPassed: progress.passed,
+    lastTotal: progress.total,
+    updatedAt: new Date().toISOString(),
+  };
+  saveScenarioProgressStore();
+}
+
+function renderScenarioProgressPanel() {
+  const panel = document.getElementById("scenarioProgressPanel");
+  if (!panel) {
+    return;
+  }
+
+  if (activeScenarioIndex === null || !scenarioPresets[activeScenarioIndex]) {
+    panel.innerHTML = `
+      <div class="detail-row progress-summary">
+        <span>進捗</span>
+        <strong>シナリオ未選択</strong>
+      </div>
+      <div class="detail-row progress-note">
+        <span>案内</span>
+        <strong>シナリオを選択すると達成率を記録します。</strong>
+      </div>
+    `;
+    return;
+  }
+
+  const scenario = scenarioPresets[activeScenarioIndex];
+  const progress = computeScenarioProgress(scenario.expected_observation);
+  const progressKey = makeScenarioProgressKey(scenario, activeScenarioIndex);
+  const stored = scenarioProgressStore[progressKey] || null;
+  const bestRatio = stored ? Number(stored.bestRatio) || 0.0 : progress.ratio;
+  const percent = (progress.ratio * 100.0).toFixed(0);
+  const bestPercent = (bestRatio * 100.0).toFixed(0);
+
+  let recommendation = "未達項目の判定理由を確認し、関連するスライダーを1つずつ調整してください。";
+  if (progress.failed === 0 && progress.pending === 0 && progress.total > 0) {
+    recommendation = "このシナリオは達成済みです。別方式へ切替えて差分比較へ進んでください。";
+  } else if (progress.pending > 0) {
+    recommendation = "未判定項目があります。ベースライン設定が必要な観測条件を先に満たしてください。";
+  }
+
+  panel.innerHTML = `
+    <div class="detail-row progress-summary">
+      <span>現在シナリオ</span>
+      <strong>${scenario.label}</strong>
+    </div>
+    <div class="detail-row progress-current">
+      <span>達成率</span>
+      <strong>${percent}% (${progress.passed}/${progress.total})</strong>
+    </div>
+    <div class="detail-row progress-best">
+      <span>ベスト記録</span>
+      <strong>${bestPercent}%</strong>
+    </div>
+    <div class="detail-row progress-note">
+      <span>次アクション</span>
+      <strong>${recommendation}</strong>
+    </div>
+  `;
+}
+
+function resetScenarioProgress() {
+  scenarioProgressStore = {};
+  saveScenarioProgressStore();
+  renderScenarioProgressPanel();
+  setStatus("進捗リセット", "学習進捗の保存データをクリアしました。");
 }
 
 function renderScenarioExpected(expectedList) {
@@ -1634,6 +1785,7 @@ function renderScenarioGuide(index = activeScenarioIndex) {
     renderGuideList("scenarioProcedure", [], true);
     renderScenarioExpected([]);
     renderGuideList("scenarioUncertainty", []);
+    renderScenarioProgressPanel();
     return;
   }
 
@@ -1648,6 +1800,7 @@ function renderScenarioGuide(index = activeScenarioIndex) {
   renderGuideList("scenarioProcedure", active.procedure, true);
   renderScenarioExpected(active.expected_observation);
   renderGuideList("scenarioUncertainty", active.uncertainty_notes);
+  renderScenarioProgressPanel();
 }
 
 function applyScenario(index) {
@@ -2490,6 +2643,7 @@ async function runSimulation() {
     }
 
     currentResponse = data;
+    updateActiveScenarioProgress();
     renderMetrics(data.metrics);
     renderTheoryPanel(data.metrics);
     renderComparisonPanel();
@@ -2522,6 +2676,7 @@ function scheduleSimulation() {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
+  loadScenarioProgressStore();
   initializeControls();
   applyStateFromUrl();
   document.getElementById("section1AnimSpeed").addEventListener("change", () => {

@@ -463,6 +463,30 @@ select,
   font-size: 0.92rem;
 }
 
+.detail-row.progress-summary,
+.detail-row.progress-current,
+.detail-row.progress-best,
+.detail-row.progress-note {
+  align-items: flex-start;
+}
+
+.detail-row.progress-current {
+  background: rgba(78, 122, 118, 0.12);
+  border-color: rgba(78, 122, 118, 0.24);
+}
+
+.detail-row.progress-best {
+  background: rgba(193, 79, 44, 0.1);
+  border-color: rgba(193, 79, 44, 0.2);
+}
+
+.detail-row.progress-note strong {
+  max-width: 36ch;
+  text-align: right;
+  line-height: 1.4;
+  font-size: 0.92rem;
+}
+
 .plot-section {
   display: grid;
   gap: 12px;

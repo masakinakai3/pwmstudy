@@ -120,6 +120,7 @@
             <button type="button" id="importJsonButton" class="action-button secondary">JSON読込</button>
             <button type="button" id="exportPngButton" class="action-button secondary">PNG保存</button>
             <button type="button" id="copyShareUrlButton" class="action-button">共有URLコピー</button>
+            <button type="button" id="resetScenarioProgressButton" class="action-button secondary">進捗リセット</button>
           </div>
           <input type="file" id="importJsonFile" accept="application/json,.json" hidden>
         </section>
@@ -156,6 +157,13 @@
               <h2>実務チェック</h2>
             </div>
             <div id="operatingCheckPanel" class="theory-stack"></div>
+          </article>
+          <article class="insight-card progress-panel">
+            <div class="panel-heading compact">
+              <p class="eyebrow">Progress</p>
+              <h2>学習進捗</h2>
+            </div>
+            <div id="scenarioProgressPanel" class="theory-stack"></div>
           </article>
         </div>
 
