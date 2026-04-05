@@ -912,7 +912,12 @@ function initializeControls() {
   document.getElementById("baselineSetButton").addEventListener("click", setBaseline);
   document.getElementById("baselineClearButton").addEventListener("click", clearBaseline);
   document.getElementById("exportJsonButton").addEventListener("click", exportCurrentJson);
+  document.getElementById("importJsonButton").addEventListener("click", () => {
+    document.getElementById("importJsonFile").click();
+  });
   document.getElementById("exportPngButton").addEventListener("click", exportDashboardPng);
+  document.getElementById("copyShareUrlButton").addEventListener("click", copyShareUrl);
+  document.getElementById("importJsonFile").addEventListener("change", onImportJsonFileChange);
 
   // SVPWM time slider
   const timeSlider = document.getElementById("svpwmTimeSlider");
@@ -965,6 +970,266 @@ function collectPayload() {
     fft_target: document.getElementById("fftTarget").value,
     fft_window: document.getElementById("fftWindow").value,
   };
+}
+
+function clampToRange(value, min, max) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return null;
+  }
+  if (numeric < min || numeric > max) {
+    return null;
+  }
+  return numeric;
+}
+
+function collectUiState() {
+  const values = collectDisplayValues();
+  if (!values) {
+    return null;
+  }
+
+  return {
+    ...values,
+    modulation_mode: document.getElementById("modulationMode").value,
+    overmod_view: document.getElementById("overmodView").checked,
+    fft_target: document.getElementById("fftTarget").value,
+    fft_window: document.getElementById("fftWindow").value,
+    show_u_ref: document.getElementById("showURef").checked,
+    show_v_ref: document.getElementById("showVRef").checked,
+    show_w_ref: document.getElementById("showWRef").checked,
+    show_line_v_uv: document.getElementById("showLineVuv").checked,
+    show_line_v_vw: document.getElementById("showLineVvw").checked,
+    show_line_v_wu: document.getElementById("showLineVwu").checked,
+  };
+}
+
+function updateShareUrlFromState() {
+  const state = collectUiState();
+  if (!state) {
+    return;
+  }
+
+  const params = new URLSearchParams();
+  params.set("V_dc", String(state.V_dc));
+  params.set("V_ll_rms", String(state.V_ll_rms));
+  params.set("f", String(state.f));
+  params.set("f_c_khz", String(state.f_c_khz));
+  params.set("t_d_us", String(state.t_d_us));
+  params.set("V_on", String(state.V_on));
+  params.set("R", String(state.R));
+  params.set("L_mh", String(state.L_mh));
+  params.set("modulation_mode", state.modulation_mode);
+  params.set("overmod_view", state.overmod_view ? "1" : "0");
+  params.set("fft_target", state.fft_target);
+  params.set("fft_window", state.fft_window);
+  params.set("show_u_ref", state.show_u_ref ? "1" : "0");
+  params.set("show_v_ref", state.show_v_ref ? "1" : "0");
+  params.set("show_w_ref", state.show_w_ref ? "1" : "0");
+  params.set("show_line_v_uv", state.show_line_v_uv ? "1" : "0");
+  params.set("show_line_v_vw", state.show_line_v_vw ? "1" : "0");
+  params.set("show_line_v_wu", state.show_line_v_wu ? "1" : "0");
+
+  const nextUrl = `${window.location.pathname}?${params.toString()}`;
+  window.history.replaceState(null, "", nextUrl);
+}
+
+function parseBoolParam(rawValue, fallback) {
+  if (rawValue === null) {
+    return fallback;
+  }
+  return rawValue === "1" || String(rawValue).toLowerCase() === "true";
+}
+
+function applyStateFromUrl() {
+  const query = new URLSearchParams(window.location.search);
+  if (!query.toString()) {
+    return;
+  }
+
+  const parsedValues = {};
+  controlDefinitions.forEach((definition) => {
+    const rawValue = query.get(definition.key);
+    if (rawValue === null) {
+      return;
+    }
+    const clamped = clampToRange(rawValue, definition.min, definition.max);
+    if (clamped !== null) {
+      parsedValues[definition.key] = clamped;
+    }
+  });
+  applyDisplayValues(parsedValues);
+
+  const modulationMode = query.get("modulation_mode");
+  if (modulationMode && modulationModeHints[modulationMode]) {
+    document.getElementById("modulationMode").value = modulationMode;
+  }
+
+  const fftTarget = query.get("fft_target");
+  if (fftTarget === "v_uv" || fftTarget === "i_u") {
+    document.getElementById("fftTarget").value = fftTarget;
+  }
+
+  const fftWindow = query.get("fft_window");
+  if (fftWindow === "hann" || fftWindow === "rectangular") {
+    document.getElementById("fftWindow").value = fftWindow;
+  }
+
+  document.getElementById("overmodView").checked = parseBoolParam(
+    query.get("overmod_view"),
+    defaultDisplayValues.overmod_view,
+  );
+  document.getElementById("showURef").checked = parseBoolParam(
+    query.get("show_u_ref"),
+    defaultDisplayValues.show_u_ref,
+  );
+  document.getElementById("showVRef").checked = parseBoolParam(
+    query.get("show_v_ref"),
+    defaultDisplayValues.show_v_ref,
+  );
+  document.getElementById("showWRef").checked = parseBoolParam(
+    query.get("show_w_ref"),
+    defaultDisplayValues.show_w_ref,
+  );
+  document.getElementById("showLineVuv").checked = parseBoolParam(
+    query.get("show_line_v_uv"),
+    defaultDisplayValues.show_line_v_uv,
+  );
+  document.getElementById("showLineVvw").checked = parseBoolParam(
+    query.get("show_line_v_vw"),
+    defaultDisplayValues.show_line_v_vw,
+  );
+  document.getElementById("showLineVwu").checked = parseBoolParam(
+    query.get("show_line_v_wu"),
+    defaultDisplayValues.show_line_v_wu,
+  );
+
+  updateModulationHint();
+}
+
+async function copyShareUrl() {
+  updateShareUrlFromState();
+  const shareUrl = window.location.href;
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      await navigator.clipboard.writeText(shareUrl);
+      setStatus("共有URL", "現在の条件を含むURLをクリップボードへコピーしました。");
+      return;
+    }
+    throw new Error("clipboard API is not available");
+  } catch (error) {
+    console.error(error);
+    setStatus("共有URL", `共有URL: ${shareUrl}`, false);
+  }
+}
+
+function applyImportedControls(controls) {
+  applyDisplayValues({
+    V_dc: controls.V_dc,
+    V_ll_rms: controls.V_ll_rms,
+    f: controls.f,
+    f_c_khz: controls.f_c_khz,
+    t_d_us: controls.t_d_us,
+    V_on: controls.V_on,
+    R: controls.R,
+    L_mh: controls.L_mh,
+  });
+
+  document.getElementById("modulationMode").value = controls.modulation_mode;
+  document.getElementById("overmodView").checked = Boolean(controls.overmod_view);
+  document.getElementById("fftTarget").value = controls.fft_target;
+  document.getElementById("fftWindow").value = controls.fft_window;
+  document.getElementById("showURef").checked = Boolean(controls.show_u_ref);
+  document.getElementById("showVRef").checked = Boolean(controls.show_v_ref);
+  document.getElementById("showWRef").checked = Boolean(controls.show_w_ref);
+  document.getElementById("showLineVuv").checked = Boolean(controls.show_line_v_uv);
+  document.getElementById("showLineVvw").checked = Boolean(controls.show_line_v_vw);
+  document.getElementById("showLineVwu").checked = Boolean(controls.show_line_v_wu);
+  updateModulationHint();
+  updateShareUrlFromState();
+}
+
+function normalizeImportedControls(payload) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  if (payload.controls && typeof payload.controls === "object") {
+    const c = payload.controls;
+    return {
+      V_dc: Number(c.V_dc),
+      V_ll_rms: Number(c.V_ll_rms),
+      f: Number(c.f),
+      f_c_khz: Number(c.f_c) / 1000.0,
+      t_d_us: Number(c.t_d) * 1.0e6,
+      V_on: Number(c.V_on),
+      R: Number(c.R),
+      L_mh: Number(c.L) * 1000.0,
+      modulation_mode: c.modulation_mode || defaultDisplayValues.modulation_mode,
+      overmod_view: Boolean(c.overmod_view),
+      fft_target: c.fft_target === "i_u" ? "i_u" : "v_uv",
+      fft_window: c.fft_window === "rectangular" ? "rectangular" : "hann",
+      show_u_ref: defaultDisplayValues.show_u_ref,
+      show_v_ref: defaultDisplayValues.show_v_ref,
+      show_w_ref: defaultDisplayValues.show_w_ref,
+      show_line_v_uv: defaultDisplayValues.show_line_v_uv,
+      show_line_v_vw: defaultDisplayValues.show_line_v_vw,
+      show_line_v_wu: defaultDisplayValues.show_line_v_wu,
+    };
+  }
+
+  if (payload.params && typeof payload.params === "object") {
+    const p = payload.params;
+    return {
+      V_dc: Number(p.V_dc_V),
+      V_ll_rms: Number(p.V_ll_rms_V),
+      f: Number(p.f_Hz),
+      f_c_khz: Number(p.f_c_kHz),
+      t_d_us: Number(p.t_d_us),
+      V_on: Number(p.V_on_V),
+      R: Number(p.R_ohm),
+      L_mh: Number(p.L_mH),
+      modulation_mode: p.modulation_mode || defaultDisplayValues.modulation_mode,
+      overmod_view: false,
+      fft_target: p.fft_target === "current" ? "i_u" : "v_uv",
+      fft_window: p.fft_window === "rectangular" ? "rectangular" : "hann",
+      show_u_ref: defaultDisplayValues.show_u_ref,
+      show_v_ref: defaultDisplayValues.show_v_ref,
+      show_w_ref: defaultDisplayValues.show_w_ref,
+      show_line_v_uv: defaultDisplayValues.show_line_v_uv,
+      show_line_v_vw: defaultDisplayValues.show_line_v_vw,
+      show_line_v_wu: defaultDisplayValues.show_line_v_wu,
+    };
+  }
+
+  return null;
+}
+
+function onImportJsonFileChange(event) {
+  const file = event?.target?.files?.[0];
+  if (!file) {
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const payload = JSON.parse(String(reader.result));
+      const controls = normalizeImportedControls(payload);
+      if (!controls) {
+        setStatus("JSON読込", "対応していないJSON形式です。", true);
+        return;
+      }
+      applyImportedControls(controls);
+      setStatus("JSON読込", `読み込み完了: ${file.name}`);
+      scheduleSimulation();
+    } catch (error) {
+      console.error(error);
+      setStatus("JSON読込", "JSONの解析に失敗しました。", true);
+    }
+  };
+  reader.readAsText(file, "utf-8");
+  event.target.value = "";
 }
 
 function renderMetrics(metrics) {
@@ -2157,6 +2422,7 @@ async function runSimulation() {
       setStatus("入力確認", "未入力または範囲外の数値を修正してください。", true);
       return;
     }
+    updateShareUrlFromState();
 
     const response = await fetch("/simulate", {
       method: "POST",
@@ -2207,6 +2473,7 @@ function scheduleSimulation() {
 
 window.addEventListener("DOMContentLoaded", async () => {
   initializeControls();
+  applyStateFromUrl();
   document.getElementById("section1AnimSpeed").addEventListener("change", () => {
     if (!svpwmAnimationPaused) {
       startSvpwmAnimationTimer();
