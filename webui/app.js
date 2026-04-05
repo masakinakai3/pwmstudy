@@ -1401,6 +1401,53 @@ function renderLearningInsightPanel(response) {
   `).join("");
 }
 
+function renderOperatingCheckPanel(response) {
+  const panel = document.getElementById("operatingCheckPanel");
+  if (!panel) {
+    return;
+  }
+  if (!response || !response.diagnostics) {
+    panel.innerHTML = '<div class="detail-row"><span>実務チェック</span><strong>データ待機中</strong></div>';
+    return;
+  }
+
+  const diagnostics = response.diagnostics;
+  const items = Array.isArray(diagnostics.items) ? diagnostics.items : [];
+  const summaryTone = Number(diagnostics.warn_count) > 0 ? "warn" : "ok";
+
+  const rows = [
+    `
+    <div class="detail-row check-summary check-${summaryTone}">
+      <span>総合</span>
+      <strong>${diagnostics.summary || "評価結果なし"}</strong>
+    </div>
+  `,
+  ];
+
+  items.forEach((item) => {
+    const tone = item.status === "ok" ? "ok" : "warn";
+    const valueText = Number.isFinite(Number(item.value))
+      ? formatNumber(Number(item.value), 3)
+      : "-";
+    rows.push(`
+      <div class="detail-row check-${tone}">
+        <span>${item.label}</span>
+        <strong>${item.status === "ok" ? "OK" : "要確認"} (${valueText})</strong>
+      </div>
+      <div class="detail-row check-note">
+        <span>目安</span>
+        <strong>${item.target || "-"}</strong>
+      </div>
+      <div class="detail-row check-note">
+        <span>コメント</span>
+        <strong>${item.message || "-"}</strong>
+      </div>
+    `);
+  });
+
+  panel.innerHTML = rows.join("");
+}
+
 function renderGuideList(elementId, items, ordered = false) {
   const element = document.getElementById(elementId);
   if (!element) {
@@ -2244,6 +2291,7 @@ function setBaseline() {
   baselineResponse = JSON.parse(JSON.stringify(currentResponse));
   renderComparisonPanel();
   renderLearningInsightPanel(currentResponse);
+  renderOperatingCheckPanel(currentResponse);
   renderPlots(currentResponse);
   setStatus("比較モード", "現在の条件をベースラインとして保存しました。");
 }
@@ -2252,6 +2300,7 @@ function clearBaseline() {
   baselineResponse = null;
   renderComparisonPanel();
   renderLearningInsightPanel(currentResponse);
+  renderOperatingCheckPanel(currentResponse);
   if (currentResponse) {
     renderPlots(currentResponse);
   }
@@ -2445,6 +2494,7 @@ async function runSimulation() {
     renderTheoryPanel(data.metrics);
     renderComparisonPanel();
     renderLearningInsightPanel(data);
+    renderOperatingCheckPanel(data);
     renderPlots(data);
     renderScenarioGuide(activeScenarioIndex);
     setStatus(

@@ -630,6 +630,7 @@ class InverterVisualizer:
         fft_vuv = results["fft_vuv"]
         fft_iu = results["fft_iu"]
         pf1_fft = results["pf1_fft"]
+        diagnostics = results.get("diagnostics", {})
         err_pct = (abs(I_measured - I_theory) / I_theory * 100.0
                    if I_theory > 1e-6 else 0.0)
 
@@ -657,6 +658,13 @@ class InverterVisualizer:
             f"THD_I = {fft_iu['thd']:.1f}%  /  "
             f"FFT = {results['fft_target_label']} [{results['fft_window_label']}]",
         ]
+        if diagnostics:
+            info_lines.append(
+                "実務チェック = "
+                f"OK {diagnostics.get('ok_count', 0)} / "
+                f"Warn {diagnostics.get('warn_count', 0)}  "
+                f"({diagnostics.get('summary', '')})"
+            )
         # ベースライン比較情報（設定済みの場合に追記）
         if self._baseline_results:
             bl = self._baseline_results

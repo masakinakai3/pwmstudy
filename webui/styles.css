@@ -438,6 +438,31 @@ select,
   color: #9f3b20;
 }
 
+.detail-row.check-summary,
+.detail-row.check-ok,
+.detail-row.check-warn,
+.detail-row.check-note {
+  align-items: flex-start;
+}
+
+.detail-row.check-ok {
+  background: rgba(78, 122, 118, 0.12);
+  border-color: rgba(78, 122, 118, 0.25);
+}
+
+.detail-row.check-warn {
+  background: rgba(193, 79, 44, 0.12);
+  border-color: rgba(193, 79, 44, 0.25);
+}
+
+.detail-row.check-summary strong,
+.detail-row.check-note strong {
+  max-width: 34ch;
+  text-align: right;
+  line-height: 1.4;
+  font-size: 0.92rem;
+}
+
 .plot-section {
   display: grid;
   gap: 12px;

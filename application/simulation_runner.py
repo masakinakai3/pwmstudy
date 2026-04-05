@@ -364,6 +364,116 @@ def _build_svpwm_observer_payload(
     }
 
 
+def _build_operating_diagnostics(
+    metrics: Mapping[str, float | bool],
+    spectra: Mapping[str, Mapping[str, float]],
+) -> dict[str, object]:
+    """運転点の学習用チェック項目を構築する.
+
+    Args:
+        metrics: run_simulation 内で算出した主要メトリクス。
+        spectra: FFT 結果辞書（v_uv, i_u を含む）。
+
+    Returns:
+        web/desktop 共通で使える診断辞書。
+    """
+    i_theory = float(metrics["I_theory"])
+    i_measured = float(metrics["I_measured"])
+    i_error_pct = (
+        abs(i_measured - i_theory) / i_theory * 100.0
+        if i_theory > 1.0e-9
+        else 0.0
+    )
+
+    m_a_raw = float(metrics["m_a_raw"])
+    m_a_limit = float(metrics["m_a_limit"])
+    limit_linear = bool(metrics["limit_linear"])
+    in_linear_region = (m_a_raw <= m_a_limit + 1.0e-9) or (not limit_linear)
+
+    m_f = float(metrics["m_f"])
+    thd_i = float(spectra["i_u"]["thd"])
+    pf1 = float(metrics["pf1_fft"])
+
+    items = [
+        {
+            "key": "linear_modulation",
+            "label": "線形変調余裕",
+            "status": "ok" if in_linear_region else "warn",
+            "value": m_a_raw,
+            "target": f"m_a_raw <= {m_a_limit:.3f}",
+            "message": (
+                "線形領域内です。"
+                if in_linear_region
+                else "線形上限を超過しています。低次歪み増加に注意してください。"
+            ),
+        },
+        {
+            "key": "frequency_ratio",
+            "label": "周波数変調率",
+            "status": "ok" if m_f >= 21.0 else "warn",
+            "value": m_f,
+            "target": "m_f >= 21",
+            "message": (
+                "キャリア比が高く、波形品質を確保しやすい条件です。"
+                if m_f >= 21.0
+                else "m_f が低めです。f_c を上げると高調波を高周波側へ移せます。"
+            ),
+        },
+        {
+            "key": "current_thd",
+            "label": "電流 THD",
+            "status": "ok" if thd_i <= 5.0 else "warn",
+            "value": thd_i,
+            "target": "THD_I <= 5.0%",
+            "message": (
+                "実務上の目安内です。"
+                if thd_i <= 5.0
+                else "電流歪みが高めです。L 増加または f_c 上昇を検討してください。"
+            ),
+        },
+        {
+            "key": "fundamental_pf",
+            "label": "基本波力率",
+            "status": "ok" if pf1 >= 0.90 else "warn",
+            "value": pf1,
+            "target": "PF1 >= 0.90",
+            "message": (
+                "力率は良好です。"
+                if pf1 >= 0.90
+                else "力率が低めです。L/R 条件により位相遅れが大きくなっています。"
+            ),
+        },
+        {
+            "key": "theory_error",
+            "label": "理論実測誤差",
+            "status": "ok" if i_error_pct <= 5.0 else "warn",
+            "value": i_error_pct,
+            "target": "|I1_fft - I1_theory|/I1_theory <= 5%",
+            "message": (
+                "理論値と整合しています。"
+                if i_error_pct <= 5.0
+                else "理論との誤差が大きめです。非理想条件や過変調影響を確認してください。"
+            ),
+        },
+    ]
+
+    ok_count = sum(1 for item in items if item["status"] == "ok")
+    warn_count = len(items) - ok_count
+
+    summary = (
+        f"{ok_count}/{len(items)} 項目が目安を満たしています。"
+        if warn_count == 0
+        else f"{warn_count} 項目で要確認です。"
+    )
+
+    return {
+        "ok_count": int(ok_count),
+        "warn_count": int(warn_count),
+        "summary": summary,
+        "items": items,
+    }
+
+
 def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
     """シミュレーションを実行し、UI 非依存の構造化結果辞書を返す.
 
@@ -504,6 +614,20 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
     m_a_raw = 2.0 * V_ph_peak / V_dc
     m_a_limit = THIRD_HARMONIC_LIMIT if reference_mode in {"third_harmonic", "minmax"} else 1.0
     m_a = min(m_a_raw, m_a_limit) if limit_linear else m_a_raw
+    diagnostics = _build_operating_diagnostics(
+        {
+            "I_theory": I_theory_peak,
+            "I_measured": I_measured,
+            "m_a_raw": m_a_raw,
+            "m_a_limit": m_a_limit,
+            "limit_linear": limit_linear,
+            "m_f": f_c / f,
+            "pf1_fft": pf1_fft,
+        },
+        {
+            "i_u": fft_iu,
+        },
+    )
 
     result = {
         "meta": {
@@ -602,6 +726,7 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
             "I_measured": I_measured,
             "pf1_fft": pf1_fft,
         },
+        "diagnostics": diagnostics,
         "t": t_disp,
         "t_fft": t_fft,
         "v_u": v_u_mod[sl],
@@ -821,6 +946,7 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
             "I_rms": float(spectra["i_u"]["rms_total"]),
             "THD_I": float(spectra["i_u"]["thd"]),
         },
+        "diagnostics": results["diagnostics"],
     }
 
     svpwm_observer = results.get("svpwm_observer")

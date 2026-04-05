@@ -797,6 +797,7 @@ class TestSimulationRunnerContract:
             "currents",
             "spectra",
             "metrics",
+            "diagnostics",
         }
         assert set(results["voltages"].keys()) >= {
             "v_uv",
@@ -815,6 +816,8 @@ class TestSimulationRunnerContract:
         assert len(results["carrier"]["waveform"]) == n_display
         assert len(results["voltages"]["v_wN"]) == n_display
         assert len(results["currents"]["i_w"]) == n_display
+        assert results["diagnostics"]["ok_count"] + results["diagnostics"]["warn_count"] == 5
+        assert len(results["diagnostics"]["items"]) == 5
 
     def test_build_web_response_limits_points_and_keeps_metrics(self) -> None:
         """web 応答が最大点数制限と主要メトリクスを満たす."""
@@ -856,6 +859,8 @@ class TestSimulationRunnerContract:
         assert response["metrics"]["THD_V"] >= 0.0
         assert response["metrics"]["THD_I"] >= 0.0
         assert response["metrics"]["m_a_limit"] > 1.0
+        assert response["diagnostics"]["ok_count"] + response["diagnostics"]["warn_count"] == 5
+        assert len(response["diagnostics"]["items"]) == 5
 
     def test_overmod_view_reports_unclamped_m_a(self) -> None:
         """overmod_view=True では m_a が線形上限でクランプされない."""
