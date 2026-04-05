@@ -320,6 +320,13 @@ select,
   line-height: 1.45;
 }
 
+.guide-reason {
+  margin-top: 6px;
+  color: #9f3b20;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .guide-status {
   display: inline-block;
   margin-top: 6px;
@@ -375,7 +382,7 @@ select,
 
 .insight-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 14px;
 }
 
@@ -407,6 +414,28 @@ select,
 
 .detail-row strong {
   font-size: 1rem;
+}
+
+.detail-row.delta-up {
+  background: rgba(78, 122, 118, 0.14);
+  border-color: rgba(78, 122, 118, 0.26);
+}
+
+.detail-row.delta-down {
+  background: rgba(193, 79, 44, 0.12);
+  border-color: rgba(193, 79, 44, 0.26);
+}
+
+.detail-row.delta-neutral {
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.detail-row strong.delta-up {
+  color: #2f5f5a;
+}
+
+.detail-row strong.delta-down {
+  color: #9f3b20;
 }
 
 .plot-section {

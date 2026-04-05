@@ -419,6 +419,15 @@ function formatNumber(value, digits) {
   return Number(value).toFixed(digits);
 }
 
+function formatSignedNumber(value, digits) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return "-";
+  }
+  const sign = numeric > 0 ? "+" : "";
+  return `${sign}${formatNumber(numeric, digits)}`;
+}
+
 function setStatus(badgeText, message, isError = false) {
   const badge = document.getElementById("apiStatus");
   const detail = document.getElementById("statusMessage");
@@ -1015,17 +1024,114 @@ function renderComparisonPanel() {
   const deltaThdV = currentResponse.metrics.THD_V - baselineResponse.metrics.THD_V;
   const deltaThdI = currentResponse.metrics.THD_I - baselineResponse.metrics.THD_I;
 
-  panel.innerHTML = [
-    ["基準方式", baselineResponse.meta.modulation_summary_label],
-    ["ΔV1 [V]", `${deltaV1 >= 0 ? "+" : ""}${formatNumber(deltaV1, 1)}`],
-    ["ΔI1 [A]", `${deltaI1 >= 0 ? "+" : ""}${formatNumber(deltaI1, 2)}`],
-    ["ΔTHD_V [%]", `${deltaThdV >= 0 ? "+" : ""}${formatNumber(deltaThdV, 1)}`],
-    ["ΔTHD_I [%]", `${deltaThdI >= 0 ? "+" : ""}${formatNumber(deltaThdI, 1)}`],
-    ["基準 m_a", formatNumber(baselineResponse.metrics.m_a, 3)],
-  ].map(([label, value]) => `
+  const comparisonRows = [
+    {
+      label: "基準方式",
+      value: baselineResponse.meta.modulation_summary_label,
+      tone: "neutral",
+    },
+    {
+      label: "ΔV1 [V]",
+      value: formatSignedNumber(deltaV1, 1),
+      tone: deltaV1 > 0 ? "up" : (deltaV1 < 0 ? "down" : "neutral"),
+    },
+    {
+      label: "ΔI1 [A]",
+      value: formatSignedNumber(deltaI1, 2),
+      tone: deltaI1 > 0 ? "up" : (deltaI1 < 0 ? "down" : "neutral"),
+    },
+    {
+      label: "ΔTHD_V [%]",
+      value: formatSignedNumber(deltaThdV, 1),
+      tone: deltaThdV > 0 ? "down" : (deltaThdV < 0 ? "up" : "neutral"),
+    },
+    {
+      label: "ΔTHD_I [%]",
+      value: formatSignedNumber(deltaThdI, 1),
+      tone: deltaThdI > 0 ? "down" : (deltaThdI < 0 ? "up" : "neutral"),
+    },
+    {
+      label: "基準 m_a",
+      value: formatNumber(baselineResponse.metrics.m_a, 3),
+      tone: "neutral",
+    },
+  ];
+
+  panel.innerHTML = comparisonRows.map((row) => `
+    <div class="detail-row delta-${row.tone}">
+      <span>${row.label}</span>
+      <strong class="delta-${row.tone}">${row.value}</strong>
+    </div>
+  `).join("");
+}
+
+function renderLearningInsightPanel(response) {
+  const panel = document.getElementById("learningInsightPanel");
+  if (!panel) {
+    return;
+  }
+  if (!response || !response.metrics) {
+    panel.innerHTML = '<div class="detail-row"><span>解説</span><strong>データ待機中</strong></div>';
+    return;
+  }
+
+  const metrics = response.metrics;
+  const rows = [];
+  const modulationMode = response.meta?.modulation_mode;
+  const isDpwmMode = modulationMode === "carrier_two_phase" || modulationMode === "space_vector_two_phase";
+
+  if (metrics.THD_I < metrics.THD_V) {
+    rows.push({
+      label: "電流平滑化",
+      value: `THD_I (${formatNumber(metrics.THD_I, 1)}%) < THD_V (${formatNumber(metrics.THD_V, 1)}%)。L が高周波成分を抑制しています。`,
+    });
+  } else {
+    rows.push({
+      label: "高調波観察",
+      value: `THD_I (${formatNumber(metrics.THD_I, 1)}%) が高めです。f_c を上げるか L を増やすと改善しやすい条件です。`,
+    });
+  }
+
+  if (metrics.pf1_fft < 0.95) {
+    rows.push({
+      label: "力率低下",
+      value: `PF1=${formatNumber(metrics.pf1_fft, 3)}、phi=${formatNumber(metrics.phi_deg, 1)}deg。L/R が大きく、電流遅れが強い状態です。`,
+    });
+  } else {
+    rows.push({
+      label: "力率状態",
+      value: `PF1=${formatNumber(metrics.pf1_fft, 3)}。位相遅れが小さく、電圧と電流の基本波が近い状態です。`,
+    });
+  }
+
+  if (metrics.m_a_raw > metrics.m_a_limit && !metrics.limit_linear) {
+    rows.push({
+      label: "過変調観察",
+      value: `m_a_raw=${formatNumber(metrics.m_a_raw, 3)} が線形上限 ${formatNumber(metrics.m_a_limit, 3)} を超過。低次歪みの増加を優先観察してください。`,
+    });
+  } else if (metrics.m_a_raw > metrics.m_a_limit && metrics.limit_linear) {
+    rows.push({
+      label: "線形クランプ",
+      value: `m_a_raw=${formatNumber(metrics.m_a_raw, 3)} が上限超過のためクランプ中。Overmod View で非線形領域を比較できます。`,
+    });
+  } else {
+    rows.push({
+      label: "変調領域",
+      value: `m_a=${formatNumber(metrics.m_a, 3)} は線形領域です。方式差は V1 と THD_V を並べて比較すると把握しやすくなります。`,
+    });
+  }
+
+  rows.push({
+    label: "方式メモ",
+    value: isDpwmMode
+      ? "二相変調系です。クランプ区間でスイッチング回数が減るため、Section 2 の平坦区間に注目してください。"
+      : "連続変調系です。Section 2 で各相が継続的に切り替わるため、電圧利用率と高調波分布を比較しやすいです。",
+  });
+
+  panel.innerHTML = rows.map((row) => `
     <div class="detail-row">
-      <span>${label}</span>
-      <strong>${value}</strong>
+      <span>${row.label}</span>
+      <strong>${row.value}</strong>
     </div>
   `).join("");
 }
@@ -1080,43 +1186,77 @@ function evaluateScenarioObservation(observation) {
   const metricName = observation?.metric;
   const comparison = observation?.comparison;
   if (!metricName || !comparison) {
-    return { text, statusLabel: "観測待ち", statusClass: "pending" };
+    return { text, statusLabel: "観測待ち", statusClass: "pending", reason: "判定条件が未設定です。" };
   }
 
   const currentValue = getScenarioMetricValue(metricName, currentResponse);
   if (!Number.isFinite(currentValue)) {
-    return { text, statusLabel: "未判定", statusClass: "pending" };
+    return { text, statusLabel: "未判定", statusClass: "pending", reason: "対象メトリクスを算出できませんでした。" };
   }
 
   let passed = false;
+  let reason = "";
+  const thresholdValue = Number(observation.value);
   if (comparison === "ge") {
-    passed = currentValue >= Number(observation.value);
+    passed = currentValue >= thresholdValue;
+    if (!passed) {
+      reason = `現在値 ${formatNumber(currentValue, 3)} が目標 >= ${formatNumber(thresholdValue, 3)} に未到達です。`;
+    }
   } else if (comparison === "gt") {
-    passed = currentValue > Number(observation.value);
+    passed = currentValue > thresholdValue;
+    if (!passed) {
+      reason = `現在値 ${formatNumber(currentValue, 3)} が目標 > ${formatNumber(thresholdValue, 3)} を満たしていません。`;
+    }
   } else if (comparison === "le") {
-    passed = currentValue <= Number(observation.value);
+    passed = currentValue <= thresholdValue;
+    if (!passed) {
+      reason = `現在値 ${formatNumber(currentValue, 3)} が目標 <= ${formatNumber(thresholdValue, 3)} を超えています。`;
+    }
   } else if (comparison === "lt") {
-    passed = currentValue < Number(observation.value);
+    passed = currentValue < thresholdValue;
+    if (!passed) {
+      reason = `現在値 ${formatNumber(currentValue, 3)} が目標 < ${formatNumber(thresholdValue, 3)} を超えています。`;
+    }
   } else if (comparison === "between") {
     passed = currentValue >= Number(observation.min) && currentValue <= Number(observation.max);
+    if (!passed) {
+      reason = `現在値 ${formatNumber(currentValue, 3)} が範囲 ${formatNumber(Number(observation.min), 3)} - ${formatNumber(Number(observation.max), 3)} 外です。`;
+    }
   } else if (comparison === "approx") {
     const tolerance = Number.isFinite(Number(observation.tolerance)) ? Number(observation.tolerance) : 0.05;
-    passed = Math.abs(currentValue - Number(observation.value)) <= tolerance;
+    passed = Math.abs(currentValue - thresholdValue) <= tolerance;
+    if (!passed) {
+      reason = `現在値 ${formatNumber(currentValue, 3)} が目標 ${formatNumber(thresholdValue, 3)} ± ${formatNumber(tolerance, 3)} から外れています。`;
+    }
   } else if (comparison === "delta_ge" || comparison === "delta_le") {
     const baselineValue = getScenarioMetricValue(metricName, baselineResponse);
     if (!Number.isFinite(baselineValue)) {
-      return { text, statusLabel: "未判定", statusClass: "pending" };
+      return {
+        text,
+        statusLabel: "未判定",
+        statusClass: "pending",
+        reason: "ベースライン未設定のため差分判定できません。",
+      };
     }
     const delta = currentValue - baselineValue;
-    passed = comparison === "delta_ge" ? delta >= Number(observation.value) : delta <= Number(observation.value);
+    passed = comparison === "delta_ge" ? delta >= thresholdValue : delta <= thresholdValue;
+    if (!passed) {
+      reason = `差分 ${formatSignedNumber(delta, 3)} が目標 ${comparison === "delta_ge" ? ">=" : "<="} ${formatSignedNumber(thresholdValue, 3)} を満たしません。`;
+    }
   } else {
-    return { text, statusLabel: "未判定", statusClass: "pending" };
+    return {
+      text,
+      statusLabel: "未判定",
+      statusClass: "pending",
+      reason: "未対応の比較演算です。",
+    };
   }
 
   return {
     text,
     statusLabel: passed ? "達成" : "未達",
     statusClass: passed ? "ok" : "ng",
+    reason: passed ? "" : reason,
   };
 }
 
@@ -1148,6 +1288,13 @@ function renderScenarioExpected(expectedList) {
     status.className = `guide-status ${item.statusClass}`;
     status.textContent = item.statusLabel;
     block.appendChild(status);
+
+    if (item.reason) {
+      const reason = document.createElement("p");
+      reason.className = "guide-reason";
+      reason.textContent = item.reason;
+      block.appendChild(reason);
+    }
 
     container.appendChild(block);
   });
@@ -1831,6 +1978,7 @@ function setBaseline() {
   }
   baselineResponse = JSON.parse(JSON.stringify(currentResponse));
   renderComparisonPanel();
+  renderLearningInsightPanel(currentResponse);
   renderPlots(currentResponse);
   setStatus("比較モード", "現在の条件をベースラインとして保存しました。");
 }
@@ -1838,6 +1986,7 @@ function setBaseline() {
 function clearBaseline() {
   baselineResponse = null;
   renderComparisonPanel();
+  renderLearningInsightPanel(currentResponse);
   if (currentResponse) {
     renderPlots(currentResponse);
   }
@@ -2029,6 +2178,7 @@ async function runSimulation() {
     renderMetrics(data.metrics);
     renderTheoryPanel(data.metrics);
     renderComparisonPanel();
+    renderLearningInsightPanel(data);
     renderPlots(data);
     renderScenarioGuide(activeScenarioIndex);
     setStatus(
