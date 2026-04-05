@@ -2,7 +2,7 @@
 
 三相PWMインバータ学習ソフトウェアへの貢献ありがとうございます。
 
-> **現在の状態**: STEP 1〜8 の初期実装＋改善 IMPROVE-1〜10 適用済み。テスト34件 ALL PASS。
+> **現在の状態**: STEP 1〜8 の初期実装＋改善 IMPROVE-1〜12 適用済み。テスト65件 ALL PASS。
 > 今後は機能拡張・改善フェーズです。
 
 ## 開発環境のセットアップ
@@ -29,7 +29,7 @@ pip install -r requirements.txt
 
 ```bash
 python main.py                    # GUI 起動
-python -m pytest tests/ -v        # テスト実行（34件）
+python -m pytest tests/ -v        # テスト実行（65件）
 ```
 
 ## プロジェクト構成
@@ -49,7 +49,7 @@ python -m pytest tests/ -v        # テスト実行（34件）
 │   ├── __init__.py
 │   └── visualizer.py            # 6段波形表示 + 8スライダー + PWM方式選択 + FFT切替 + 非理想モデル + 理論比較表示
 ├── tests/
-│   └── test_simulation.py       # 物理妥当性テスト（34件、7クラス）
+│   └── test_simulation.py       # 物理妥当性テスト（65件、simulation/application/API/UI横断）
 ├── docs/
 │   └── user_guide.md            # 利用手順書
 ├── requirements.txt
@@ -133,7 +133,7 @@ feat: RL負荷電流演算モジュールを実装
 ### テストの実行
 
 ```bash
-python -m pytest tests/ -v        # 全テスト（34件）
+python -m pytest tests/ -v        # 全テスト（65件）
 python -m pytest tests/ -k "RlLoad"  # 特定クラスのみ
 ```
 

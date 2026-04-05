@@ -77,7 +77,7 @@ docker compose up --build
 python -m pytest tests/ -v
 ```
 
-69 件のテスト（物理妥当性検証 + application 層 + API/UI 疎通）が実行されます。
+65 件のテスト（物理妥当性検証 + application 層 + API/UI 疎通）が実行されます。
 
 ## プロジェクト構成
 
@@ -106,7 +106,7 @@ python -m pytest tests/ -v
 │   ├── styles.css               # Web UI スタイル
 │   └── app.js                   # Web UI ロジック
 ├── tests/
-│   └── test_simulation.py       # 物理妥当性 + application/API/UI テスト（69 件）
+│   └── test_simulation.py       # 物理妥当性 + application/API/UI テスト（65 件）
 ├── Dockerfile                   # Web API 単体コンテナ
 ├── docker-compose.yml           # Docker Compose 起動定義
 ├── architecture.md              # アーキテクチャ設計書

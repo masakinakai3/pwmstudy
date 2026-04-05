@@ -753,10 +753,10 @@ class TestScenarioPresets:
                 )
 
     def test_scenario_count(self) -> None:
-        """シナリオ数が仕様の6件であることを確認する."""
+        """シナリオ数が現行仕様の9件であることを確認する."""
         from ui.visualizer import SCENARIO_PRESETS
 
-        assert len(SCENARIO_PRESETS) == 6
+        assert len(SCENARIO_PRESETS) == 9
 
 
 class TestSimulationRunnerContract:
