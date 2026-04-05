@@ -1,51 +1,51 @@
 ---
-description: "Use when editing UI/visualization code (visualizer.py). Covers Matplotlib widgets, subplot layout, and display units."
+description: "Use when editing desktop UI code in ui/visualizer.py. Covers Matplotlib widgets, application-layer delegation, scenario buttons, comparison/export actions, and display units."
 applyTo: "ui/**/*.py"
 ---
 
 # UI / 可視化モジュール規約
 
-## 実装済みクラス: `InverterVisualizer`
+## 対象クラス: `InverterVisualizer`
 
-### メソッド一覧
-| メソッド | 用途 |
-|---|---|
-| `__init__(self, default_params: dict)` | 初期化（Figure/Axes/Slider/Line生成） |
-| `run(self)` | `plt.show()` でメインループ開始 |
-| `_setup_sliders(self)` | 8本のスライダーを配置 |
-| `_setup_fft_controls(self)` | FFT表示対象と窓関数の選択を配置 |
-| `_setup_mode_selector(self)` | PWM方式選択を配置 |
-| `_init_plots(self)` | 6段サブプロットの初期設定 |
-| `_read_params(self) -> dict` | スライダー値→SI単位系パラメータ辞書 |
-| `_solve_nonideal_power_stage(self, ...)` | 非理想電圧-電流整合の反復計算 |
-| `_run_simulation(self, params) -> dict` | シミュレーション実行（全6モジュール呼び出し） |
-| `_draw_waveforms(self, results)` | Line2D の set_data で波形更新 |
-| `_update(self, val)` | スライダー変更コールバック |
-| `_update_fft_target(self, label)` | FFT表示対象変更コールバック |
-| `_update_fft_window(self, label)` | FFT窓関数変更コールバック |
-| `_update_mode(self, label)` | PWM方式変更コールバック |
+### 主な責務
+- 8パラメータスライダーと modulation mode の操作
+- Overmod View, FFT target/window の切替
+- 学習シナリオボタンの適用
+- ベースライン比較と JSON/PNG エクスポート
+- application 層の結果を 6段の Matplotlib 表示へ反映
 
 ### モジュール定数
 - `POINTS_PER_CARRIER = 100` — キャリア1周期あたりのサンプル数
 - `N_DISPLAY_CYCLES = 2` — 表示する出力波形の周期数
 - `N_WARMUP_CYCLES_MIN = 5` — 助走周期数の最小値（定常状態到達用）
-- `NONIDEAL_CORRECTION_STEPS = 2` — 非理想電圧-電流整合の反復回数
 
-### 助走区間ロジック
-- 動的計算: `n_warmup = max(N_WARMUP_CYCLES_MIN, ceil(5 * tau / T_cycle))`
-- シミュレーションは `n_warmup + N_DISPLAY_CYCLES` 周期分実行
-- 表示は最後の `N_DISPLAY_CYCLES` 周期のみ
+## application 層への委譲
+- 単位変換は `normalize_ui_display_params()` を通す
+- シミュレーション本体は `run_simulation()` へ委譲する
+- エクスポートは `build_export_payload()` を使う
+- ベースラインは `build_baseline_snapshot()` を使う
+- desktop UI 側で simulation ロジックを再実装しない
 
-### m_a 表示
-- `fig.text()` で Figure 上部に変調率を表示
-- クランプ上限は方式依存
-  - Natural: 1.0
-  - Third Harmonic Injection: `2 / sqrt(3)`
+## 現行コールバック群
+- `_setup_sliders()`
+- `_setup_mode_selector()`
+- `_setup_fft_controls()`
+- `_setup_scenario_buttons()`
+- `_setup_export_buttons()`
+- `_update_modulation_mode()`
+- `_update_overmod_view()`
+- `_update_fft_target()`
+- `_update_fft_window()`
+- `_apply_scenario()`
+- `_set_baseline()` / `_clear_baseline()`
+- `_save_json()` / `_save_png()`
+- `_draw_waveforms()` / `_update()`
 
 ## Matplotlib 構成
 - `matplotlib.widgets.Slider` でパラメータ操作
 - `matplotlib.widgets.RadioButtons` で PWM 方式を選択
-- `matplotlib.widgets.RadioButtons` で FFT 表示対象と窓関数を選択
+- `matplotlib.widgets.RadioButtons` で Overmod View / FFT 表示対象 / 窓関数を選択
+- `matplotlib.widgets.Button` でシナリオ・比較・エクスポートを操作
 - `fig.add_gridspec(6, 1)` で6段サブプロット
 - `fig.subplots_adjust(bottom=0.35)` でスライダー領域を確保
 - サブプロット構成（上5段はsharex=True、FFTはx軸独立）:
@@ -61,10 +61,11 @@ applyTo: "ui/**/*.py"
 - UI 表示のみ補助単位を使用:
   - `f_c`: kHz 表示 → `val * 1000.0` で Hz に変換
   - `L`: mH 表示 → `val / 1000.0` で H に変換
+  - `t_d`: us 表示 → `val * 1e-6` で s に変換
 - 時間軸: ms 表示（`t * 1000.0`）
 - 軸ラベルに単位を必ず記載
 
-## スライダーパラメータ（実装済み）
+## スライダーパラメータ
 | パラメータ | 記号 | デフォルト | 範囲 | 表示単位 | valstep |
 |---|---|---|---|---|---|
 | 直流母線電圧 | V_dc | 300 V | 100–600 | V | 1 |
@@ -78,24 +79,19 @@ applyTo: "ui/**/*.py"
 
 ## コールバック設計
 - `_update(val)` でスライダー変更時に全シミュレーションを再実行
-- `_update_fft_target(label)` で FFT 表示対象変更時に再描画する
-- `_update_fft_window(label)` で FFT 窓関数変更時に再解析・再描画する
-- `_update_mode(label)` で PWM 方式変更時に全シミュレーションを再実行
-- `_run_simulation()` で `simulation/` パッケージの6関数を順次呼び出し、必要に応じて `_solve_nonideal_power_stage()` を用いる
-- `_draw_waveforms()` で Line2D の `set_data` + FFT棒グラフ再描画 + 情報パネル更新 + `draw_idle()` で高速再描画
+- `_update_fft_target(label)` / `_update_fft_window(label)` は再描画トリガー
+- `_update_modulation_mode(label)` / `_update_overmod_view(label)` は simulation を再実行する
+- `_apply_scenario(idx)` は `application.scenario_presets` の desktop/web 共通定義を適用する
+- `_draw_waveforms()` は application 層の構造化結果をそのまま使う
 - UI コード内に物理演算ロジックを書かない
-- V_ll スライダーは RMS 入力、`_read_params()` 内で `* np.sqrt(2)` でピーク値に変換
-- t_d スライダーは us 入力、`_read_params()` 内で `* 1e-6` で秒に変換
 
 ## データフロー
 ```
 _update(val)
-  → _read_params() — スライダー値を SI 単位に変換（V_ll: RMS→peak, t_d: us→s）
+  → _read_display_params()
+  → normalize_ui_display_params()
   → _run_simulation(params)
-      → generate_reference(mode=...) → apply_sampling_mode() → generate_carrier()
-      → compare_pwm() → apply_deadtime()
-      → calc_inverter_voltage() → solve_rl_load()
-      → _solve_nonideal_power_stage()  # t_d > 0 または V_on > 0 のとき
-      → analyze_spectrum(window_mode=...)
-  → _draw_waveforms(results) — Line2D.set_data + FFT棒グラフ + draw_idle
+      → application.run_simulation()
+          → simulation.*
+  → _draw_waveforms(results)
 ```

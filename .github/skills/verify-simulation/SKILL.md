@@ -1,6 +1,6 @@
 ---
 name: verify-simulation
-description: "Verify three-phase PWM inverter simulation results. Use when checking physical correctness: three-phase symmetry, voltage/current ranges, steady-state theoretical values, and waveform quality."
+description: "Verify current simulation behavior and shared application responses. Use when checking physical correctness, modulation-mode consistency, steady-state values, FFT metrics, or API-visible waveform payloads."
 ---
 
 # シミュレーション検証スキル
@@ -9,6 +9,8 @@ description: "Verify three-phase PWM inverter simulation results. Use when check
 - シミュレーションモジュール実装後の検証
 - パラメータ変更後の妥当性確認
 - バグ調査時の物理量チェック
+- application.run_simulation() / build_web_response() の応答検証
+- modulation_mode / Overmod View / scenario 適用後の確認
 
 ## Procedure
 
@@ -49,6 +51,8 @@ assert np.all(np.isin(S_u, [0, 1]))
 unique_levels = np.unique(np.round(v_uv, decimals=6))
 assert set(unique_levels).issubset({-V_dc, 0, V_dc})
 ```
+
+DPWM / SVPWM 系では、線間参照差の不変性とクランプ区間の存在を分けて確認する。
 
 ### Step 3: 定常状態の理論値比較
 ```python
@@ -92,6 +96,8 @@ assert result_sine["thd"] < 1.0, f"純正弦波のTHD異常: {result_sine['thd']
 assert result["thd"] > 0.0, "PWM波形のTHDが0%は異常"
 ```
 
+必要に応じて `PF1`, `phi`, `V1_pk`, `I1_pk`, `m_a`, `m_f` を application 層のメトリクスとして検証する。
+
 ### Step 6: 助走区間の検証
 ```python
 # 助走周期数がRL時定数に対して十分か
@@ -106,4 +112,5 @@ assert n_warmup * T_cycle >= 5 * tau, "助走期間が5τに不足"
 ## References
 - [architecture.md](../../architecture.md) — モジュール設計・データフロー
 - [implementation_plan.md](../../implementation_plan.md) — 各STEP の検証方法
-- [improvement_plan.md](../../improvement_plan.md) — 改善計画書（IMPROVE-1〜6）
+- [improvement_plan.md](../../improvement_plan.md) — 改善計画書
+- [docs/web_api_contract.md](../../docs/web_api_contract.md) — API-visible payload の契約

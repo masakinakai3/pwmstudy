@@ -1,100 +1,117 @@
-# Copilot 指示書 — 三相PWMインバータ学習ソフトウェア
+# Copilot 指示書 — 三相PWMインバータ学習シミュレータ
 
 ## プロジェクト概要
 
-三相PWMインバータの原理を学習するためのシミュレーションソフトウェア。
-Python + NumPy + Matplotlib（widgets）構成。**STEP 1〜8 の初期実装＋改善 IMPROVE-1〜10 適用済み。**
+三相2レベルPWMインバータの原理を学習するためのシミュレータ。
+desktop UI（Matplotlib）と web UI（FastAPI + Plotly）を並行維持し、共通の application 層と simulation 層を共有する。
+現行状態は **STEP 1〜8 実装済み、IMPROVE-1〜12 適用済み、web 移行後の application/webapi/webui 構成を含む。**
 
 ## アーキテクチャ
 
-- `simulation/` — シミュレーションエンジン（6モジュール、全て純粋関数）
-  - `reference_generator.py` — `generate_reference(V_ll, f, V_dc, t, mode="sinusoidal")`
+- `simulation/` — 純粋関数ベースの数値計算層
+  - `reference_generator.py` — `generate_reference(..., reference_mode, limit_linear, clamp_mode)`
   - `carrier_generator.py` — `generate_carrier(f_c, t)`
   - `pwm_comparator.py` — `apply_sampling_mode(...)`, `compare_pwm(...)`, `apply_deadtime(...)`
-  - `inverter_voltage.py` — `calc_inverter_voltage(..., V_on, inputs_are_leg_states=False)`
+  - `inverter_voltage.py` — `calc_inverter_voltage(..., V_on=0.0, inputs_are_leg_states=False)`
   - `rl_load_solver.py` — `solve_rl_load(v_uN, v_vN, v_wN, R, L, dt)`
-  - `fft_analyzer.py` — `analyze_spectrum(signal, dt, f_fundamental, window_mode="rectangular", enable_peak_interpolation=True)`
-- `ui/` — Matplotlib ベースの波形表示UI
-  - `visualizer.py` — `InverterVisualizer` クラス（6段サブプロット + 8スライダー + PWM方式選択 + FFT切替 + 非理想モデル + 理論比較表示）
-- `main.py` — エントリポイント（デフォルトパラメータの一元管理、V_ll は RMS 値）
-- `tests/test_simulation.py` — 物理妥当性テスト（34件）
-- `docs/user_guide.md` — 利用手順書
+  - `fft_analyzer.py` — `analyze_spectrum(signal, dt, f_fundamental, window_mode, enable_peak_interpolation)`
+- `application/` — desktop/web 共有の非UI層
+  - `modulation_config.py` — `modulation_mode` と内部3軸の対応
+  - `simulation_runner.py` — シミュレーション統合、`run_simulation()`, `build_web_response()`
+  - `simulation_service.py` — UI単位変換、エクスポート、ベースライン比較
+  - `scenario_presets.py` — desktop/web 共有の学習シナリオ定義
+- `ui/` — Matplotlib ベースの desktop UI
+  - `visualizer.py` — `InverterVisualizer`（シナリオ、比較、エクスポート含む）
+- `webapi/` — FastAPI
+  - `app.py` — `/, /health, /scenarios, /simulate`
+  - `schemas.py` — `SimulationRequest`
+- `webui/` — 静的フロントエンド
+  - `index.html`, `styles.css`, `app.js`
+- `tests/test_simulation.py` — simulation/application/API/UI をまとめて検証する回帰テスト群
 
-詳細は `architecture.md`、`implementation_plan.md`、`improvement_plan.md` を参照。
+詳細は `architecture.md`、`implementation_plan.md`、`improvement_plan.md`、`docs/web_api_contract.md` を参照。
 
 ## 実行・テスト
 
 ```bash
-python main.py                    # GUI 起動
-python -m pytest tests/ -v        # テスト実行（34件）
+python main.py
+python -m uvicorn webapi.app:app --reload
+python -m pytest tests -v
 ```
 
 ## コーディング規約
 
 ### 言語・スタイル
-- Python 3.10 以上を対象
-- PEP 8 準拠（インデント: スペース4つ、最大行長: 100文字）
-- docstring は Google スタイル
-- 型ヒントを関数シグネチャに付与すること
+- Python 3.10 以上
+- PEP 8 準拠（スペース4、最大行長100目安）
+- Python 関数は型ヒント付き、docstring は Google スタイル
+- JS/HTML/CSS は既存 webui の記法と UI トーンを維持する
 
 ### 命名規則
-- 物理量の変数名は電気工学の慣例に従う
-  - 電圧: `v_` プレフィックス（例: `v_uv`, `v_carrier`, `v_uN`）
-  - 電流: `i_` プレフィックス（例: `i_u`, `i_v`, `i_w`）
-  - スイッチング信号: `S_` プレフィックス（例: `S_u`, `S_v`, `S_w`）
-  - 周波数: `f` または `f_c`（キャリア）
-  - 時間: `t`, 時間刻み: `dt`
-  - 変調率: `m_a`、直流母線電圧: `V_dc`、線間電圧RMS値: `V_ll`
-- 定数はアッパースネークケース（例: `V_DC_DEFAULT`, `POINTS_PER_CARRIER`, `N_WARMUP_CYCLES_MIN`）
-- 関数名・変数名はスネークケース
-- クラス名はパスカルケース（例: `InverterVisualizer`）
+- 電圧: `v_`、電流: `i_`、スイッチング信号: `S_`、レグ状態: `leg_`
+- 周波数: `f`, `f_c`、時間: `t`, `dt`
+- 変調率: `m_a`、周波数変調率: `m_f`
+- ユーザー向け方式選択は **`modulation_mode` 1本化**
+  - `carrier`
+  - `carrier_third_harmonic`
+  - `carrier_two_phase`
+  - `space_vector`
+  - `space_vector_two_phase`
 
-### 数値計算ルール
-- 配列演算には NumPy のベクトル演算を使用し、Python の for ループは避ける
-  - **例外**: `rl_load_solver.py` の厳密離散時間更新（ステップ間依存のため for ループ許容）
-- 浮動小数点比較には許容誤差（`np.allclose`）を使用する
-- 時間配列は `np.arange` ではなく `np.linspace` で生成する（端点精度の確保）
+### 数値計算・物理ルール
+- `simulation/` は純粋関数を維持し、UI 依存を持ち込まない
+- 配列処理は NumPy ベクトル演算を優先
+  - 例外: `rl_load_solver.py` の厳密離散時間更新
+- 時間配列は `np.linspace` を使用し、実刻みは `dt_actual = t[1] - t[0]` を使う
+- UI表示時のみ kHz, mH, us 等へ変換する
+- 変数コメントや docstring では単位を明記する
 
-### 物理パラメータ
-- SI単位系を使用（V, A, Ω, H, Hz, s）
-- UI表示時のみ mH, kHz 等の補助単位を使用（`ui/visualizer.py` 内で変換）
-- 変数のコメントに必ず単位を記載する（例: `R: float  # [Ω]`）
+## データフロー
 
-## モジュール間インターフェース
-
-各シミュレーションモジュールは **純粋関数** として実装する:
-- 副作用なし（グローバル状態の変更禁止）
-- 入出力は NumPy 配列と float のみ
-- matplotlib への依存は `ui/` パッケージ内に限定
-
-### データフロー（実装済み）
+### desktop
 ```
-main.py → InverterVisualizer._run_simulation()
-  → generate_reference(mode=...) → apply_sampling_mode() → generate_carrier()
-  → compare_pwm() → apply_deadtime()
-  → calc_inverter_voltage() → solve_rl_load()
-  → analyze_spectrum(window_mode=...)
-  → _draw_waveforms()
+main.py
+  → ui.visualizer.InverterVisualizer
+    → application.normalize_ui_display_params()
+    → application.run_simulation()
+      → simulation.*
+    → application.build_export_payload() / build_baseline_snapshot()
+```
+
+### web
+```
+webui/app.js
+  → POST /simulate
+    → webapi.schemas.SimulationRequest
+    → application.run_simulation()
+    → application.build_web_response()
+  → GET /scenarios
+    → application.SCENARIO_PRESETS
 ```
 
 ## テスト方針
 
-テストは `tests/test_simulation.py` に集約（pytest、クラス単位で構成）:
+テストは `tests/test_simulation.py` に集約し、以下を含む。
 
-| テストクラス | 検証内容 |
-|---|---|
-| `TestReferenceGenerator` | 三相和=0、値域[-1,1]、過変調クランプ、零電圧、三次高調波注入 |
-| `TestCarrierGenerator` | 値域[-1,1]、±1到達 |
-| `TestPwmComparator` | スイッチング値{0,1}、零変調時の挙動、デッドタイム挿入、規則サンプリング |
-| `TestInverterVoltage` | 線間電圧和=0、相電圧和=0、3レベル確認、固定電圧降下、電流方向依存導通 |
-| `TestRlLoadSolver` | 定常電流振幅の理論値一致（5%以内）、三相電流和≈0、解析解一致、R=0極限 |
-| `TestNonidealInverterModel` | 非理想モデルでの基本波低下 |
-| `TestFftAnalyzer` | 純正弦波THD≈0、基本波振幅一致、PWMスペクトル検証、位相/再構成、RMS/THD精度 |
+- simulation の物理妥当性
+- FFT / 非理想モデル / 過変調の回帰
+- `application.scenario_presets` とサービス層の契約
+- `run_simulation()` / `build_web_response()` の応答整合
+- FastAPI の `/health`, `/scenarios`, `/simulate`
 
 ## 禁止事項
 
-- `simulation/` パッケージ内での matplotlib インポート
-- グローバル変数の使用
+- `simulation/` での `matplotlib` / `fastapi` / `plotly` 依存
+- グローバル状態への依存
 - `eval()` / `exec()` の使用
-- ハードコードされたパラメータ値（デフォルト値は `main.py` で一元管理）
-- `np.arange` での時間配列生成（端点精度の問題）
+- 旧入力軸 `reference_mode` / `sampling_mode` / `clamp_mode` を新規UI/API仕様へ逆流させること
+- 実装と無関係なドキュメントや指示書の件数表記を放置すること
+
+## ドキュメント同期
+
+以下の仕様を変更したら、関連ドキュメントも同期する。
+
+- modulation mode / scenario schema
+- `/simulate` / `/scenarios` の応答構造
+- desktop/web のエクスポート仕様
+- テスト構成の大きな変更

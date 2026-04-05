@@ -1,5 +1,5 @@
 ---
-description: "Use when reviewing simulation code for physical correctness, numerical accuracy, and electrical engineering conventions. Validates three-phase symmetry, PWM switching logic, and RL load solver stability."
+description: "Use when reviewing simulation or application-layer results for physical correctness, numerical accuracy, and electrical engineering conventions. Validates three-phase symmetry, PWM logic, FFT metrics, and shared response semantics."
 tools: [read, search]
 user-invocable: true
 ---
@@ -21,6 +21,7 @@ You are an electrical engineering expert reviewing a three-phase PWM inverter si
 - スイッチング信号が {0, 1} の離散値
 - 変調率 m_a > 1 の過変調処理
 - m_a 表示値がクランプ前の値と一致しているか
+- DPWM / SVPWM 系でクランプ区間と線間参照差の整合があるか
 
 ### 3. 数値計算の安定性
 - RL ソルバーの時間刻み dt がキャリア周期に対して十分小さいか
@@ -40,8 +41,14 @@ You are an electrical engineering expert reviewing a three-phase PWM inverter si
 - 周波数分解能がキャリア高調波を識別できるか
 - THD 計算で基本波を正しく除外しているか
 - 基本波振幅の検出精度（最近傍ビン法の妥当性）
+- PF1 / phi / V1_pk / I1_pk など application 層メトリクスの意味づけが妥当か
 
-### 6. コード品質
+### 6. application / API 契約
+- `modulation_mode` と内部3軸の対応が崩れていないか
+- `/scenarios` のシナリオ定義が現在の UI と整合しているか
+- `/simulate` の応答が物理量・表示系列・メトリクスで矛盾していないか
+
+### 7. コード品質
 - 純粋関数であること（副作用なし）
 - SI 単位系の使用
 - 変数名が電気工学慣例に従っているか

@@ -1,5 +1,5 @@
 ---
-description: "Use when writing or editing tests for simulation modules. Covers physical validation, tolerance checks, and test structure."
+description: "Use when writing or editing tests in tests/test_simulation.py. Covers simulation physics, application contracts, scenario presets, and FastAPI/web response validation."
 applyTo: "tests/**/*.py"
 ---
 
@@ -8,24 +8,28 @@ applyTo: "tests/**/*.py"
 ## テストフレームワーク
 - `pytest` を使用
 - テストは `tests/test_simulation.py` に集約（モジュール単位のクラスで構成）
-- 実行: `python -m pytest tests/ -v`
+- 実行: `python -m pytest tests -v`
 
-## 既存テスト構成（34件、7クラス）
+## 現行テスト構成
 
 | テストクラス | テスト数 | 対象モジュール |
 |---|---|---|
-| `TestReferenceGenerator` | 6 | `reference_generator.py` |
-| `TestCarrierGenerator` | 2 | `carrier_generator.py` |
-| `TestPwmComparator` | 6 | `pwm_comparator.py` |
-| `TestInverterVoltage` | 5 | `inverter_voltage.py` |
-| `TestRlLoadSolver` | 4 | `rl_load_solver.py` |
-| `TestNonidealInverterModel` | 1 | `pwm_comparator.py`, `inverter_voltage.py`, `rl_load_solver.py` |
-| `TestFftAnalyzer` | 10 | `fft_analyzer.py` |
+| `TestReferenceGenerator` | 複数 | `reference_generator.py` |
+| `TestCarrierGenerator` | 複数 | `carrier_generator.py` |
+| `TestPwmComparator` | 複数 | `pwm_comparator.py` |
+| `TestInverterVoltage` | 複数 | `inverter_voltage.py` |
+| `TestRlLoadSolver` | 複数 | `rl_load_solver.py` |
+| `TestNonidealInverterModel` | 複数 | 非理想統合挙動 |
+| `TestFftAnalyzer` | 複数 | `fft_analyzer.py` |
+| `TestScenarioPresets` | 複数 | `application/scenario_presets.py` |
+| `TestSimulationRunnerContract` | 複数 | `application/simulation_runner.py` |
+| `TestApplicationServices` | 複数 | `application/simulation_service.py` |
+| `TestWebApi` | 複数 | `webapi/app.py`, `webapi/schemas.py` |
 
 ## 共通テストパラメータ（ファイル先頭で定数定義済み）
 ```python
 V_DC = 300.0   # [V]
-V_LL = 200.0   # [V]
+V_LL = 150.0   # [V]  線間電圧指令RMS値
 F = 50.0        # [Hz]
 F_C = 5000.0    # [Hz]
 R = 10.0        # [Ω]
@@ -52,6 +56,7 @@ assert np.allclose(i_u + i_v + i_w, 0, atol=1e-3)  # 過渡状態を除く
 ```
 
 三次高調波注入では参照三相和が 0 にならないため、代わりに線間参照差の不変性を確認する。
+min-max 零相注入や DPWM 系でも、線間参照差の不変性とクランプ挙動を分けて検証する。
 
 ### 値域チェック
 ```python
@@ -70,6 +75,11 @@ assert abs(I_measured - I_theory) / I_theory < 0.05
 
 ## テスト構成
 - 新規テストは既存のクラス構造に追加するか、新モジュール用に新クラスを作成する
-- リグレッション: 変更後は既存34件が全て PASS することを確認する
+- リグレッション: simulation / application / API の既存テストが全て PASS することを確認する
 - パラメータ化テスト `@pytest.mark.parametrize` で複数条件を網羅
-- エッジケース: m_a = 0, m_a = 1, f_c >> f, R → 0, L → 0, Third Harmonic Injection, unsupported sampling mode rejection
+- エッジケース: m_a = 0, m_a = 1, f_c >> f, R → 0, L → 0, Third Harmonic Injection, min-max/SVPWM, DPWM, Overmod View, scenario schema, unknown-field 422 rejection
+
+## application / API テスト
+- `SCENARIO_PRESETS` の各要素は desktop/web 共有前提の必須キーを持つことを確認する
+- `run_simulation()` と `build_web_response()` の応答サイズ・必須メトリクス・表示系列を検証する
+- FastAPI `/health`, `/scenarios`, `/simulate` はステータスと契約フィールドを検証する

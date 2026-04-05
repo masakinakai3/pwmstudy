@@ -1,16 +1,16 @@
 ---
 name: step-implement
-description: "Implement a specific STEP from the implementation plan. Use when starting a new implementation step, coding a simulation module, or building the UI. Reads the plan, scaffolds the file, implements the algorithm, and runs verification."
+description: "Implement or extend a current feature in this repository. Use when modifying simulation modules, application/web API layers, desktop UI, or web UI while keeping implementation_plan.md and improvement_plan.md aligned."
 argument-hint: "STEP number (e.g., 'STEP 2' or '2') or feature name (e.g., 'FFT analysis')"
 ---
 
 # STEP 実装 / 機能拡張スキル
 
-> **現在の状態**: STEP 1〜8 の初期実装＋改善 IMPROVE-1〜10 適用済み。テスト34件 ALL PASS。
+> **現在の状態**: STEP 1〜8 実装済み。IMPROVE-1〜12 と web/application 層拡張が適用済み。simulation / application / desktop UI / web UI / FastAPI を横断して変更が入る可能性がある。
 
 ## When to Use
 - implementation_plan.md の特定 STEP を再実装・修正するとき
-- 将来拡張候補（FFT解析、助走期間、過変調モード等）を実装するとき
+- 既存改善項目や web/app 機能を拡張するとき
 - `/step-implement STEP 2` や `/step-implement FFT` のように呼び出す
 
 ## Procedure (Existing STEP Modification)
@@ -27,6 +27,7 @@ argument-hint: "STEP number (e.g., 'STEP 2' or '2') or feature name (e.g., 'FFT 
 - Google スタイル docstring（引数の単位を明記）
 - NumPy ベクトル演算
 - 変数コメントに単位を記載
+- desktop/web 共有仕様は application 層に寄せる
 
 ### Step 3: 検証
 変更後に全テストを実行:
@@ -49,16 +50,19 @@ argument-hint: "STEP number (e.g., 'STEP 2' or '2') or feature name (e.g., 'FFT 
 8. ~~RL ソルバの厳密離散化~~ (IMPROVE-9)
 9. ~~PWM 方式比較モード~~ (IMPROVE-7)
 10. ~~FFT 精度向上と電流スペクトル拡張~~ (IMPROVE-10)
+11. ~~学習シナリオガイド~~ (IMPROVE-11)
+12. ~~条件比較・エクスポート~~ (IMPROVE-12)
 
-未実装:
-1. 過変調モード（m_a > 1）
-2. 学習シナリオガイド機能
-3. 条件比較・エクスポート機能
+継続的な保守対象:
+1. simulation / application / web の契約同期
+2. シナリオ定義と UI 表示の整合
+3. SVPWM / DPWM / Overmod View の説明・可視化改善
 
 ### Step 2: 影響範囲の調査
 - `simulation/` に新モジュールが必要か、既存の拡張か
-- `ui/visualizer.py` への表示追加が必要か
-- `main.py` にパラメータ追加が必要か
+- `application/` と `webapi/` の契約変更が必要か
+- `ui/visualizer.py` と `webui/` の両方へ表示追加が必要か
+- `main.py` / README / docs の同期が必要か
 
 ### Step 3: 実装
 - `simulation/` と `ui/` のモジュール分離を維持する
@@ -67,6 +71,7 @@ argument-hint: "STEP number (e.g., 'STEP 2' or '2') or feature name (e.g., 'FFT 
 ### Step 4: テスト追加
 - `tests/test_simulation.py` に新テストクラスを追加
 - 物理妥当性テスト（三相対称性・値域・理論値）を含める
+- application / API / scenario schema の契約テストも必要に応じて追加する
 
 ### Step 5: 報告
 実装結果を以下の形式で報告:
@@ -78,3 +83,4 @@ argument-hint: "STEP number (e.g., 'STEP 2' or '2') or feature name (e.g., 'FFT 
 - [implementation_plan.md](../../../implementation_plan.md) — STEP 詳細仕様
 - [improvement_plan.md](../../../improvement_plan.md) — 改善計画書
 - [architecture.md](../../../architecture.md) — モジュール間データフロー
+- [docs/web_api_contract.md](../../../docs/web_api_contract.md) — application / API / web UI 契約
