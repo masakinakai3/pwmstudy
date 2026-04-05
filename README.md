@@ -186,6 +186,7 @@ Web UI のベクトル図レンジを次のように切り替えています。
 ## ドキュメント
 
 - [利用手順書](docs/user_guide.md) — 操作方法と学習のポイント
+- [数式詳解（発展学習）](docs/deep_math_guide.md) — 理論式、導出、FFT指標の詳細
 - [Web API 契約](docs/web_api_contract.md) — application 層、API、web UI の契約整理
 - [アーキテクチャ設計書](architecture.md)
 - [実装計画書](implementation_plan.md)
