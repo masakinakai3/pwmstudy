@@ -5,6 +5,33 @@ SCENARIO_PRESETS = [
         "label": "①線形変調限界",
         "hint": "V_LL を 180V 付近まで上げると m_a が 1 に近づき、184V 超でクランプ表示へ切り替わる。",
         "focus": "変調率 m_a と線形変調限界の関係を確認する。",
+        "learning_objective": "線形領域と過変調領域の境界を定量把握する。",
+        "prerequisites": [
+            "変調方式は三角波比較（carrier）を使用する。",
+            "Overmod View は OFF で開始する。",
+            "比較時は V_dc, f, f_c を固定する。",
+        ],
+        "procedure": [
+            "V_LL を 141V から 200V 以上へ段階的に増やす。",
+            "m_a の表示値とクランプ表示の有無を確認する。",
+            "Overmod View を ON にして同一条件を再確認する。",
+        ],
+        "expected_observation": [
+            {
+                "text": "m_a が 1.0 近傍へ上昇する。",
+                "metric": "m_a",
+                "comparison": "ge",
+                "value": 0.98,
+            },
+            {
+                "text": "Overmod View OFF では線形上限で波形が飽和する。",
+            },
+        ],
+        "uncertainty_notes": [
+            "厳密な境界値は表示丸めと周波数条件でわずかに変動する。",
+        ],
+        "recommended_compare_modes": ["carrier", "carrier_third_harmonic", "space_vector"],
+        "tags": ["linear_limit", "overmod", "ma"],
         "sliders": {
             "V_dc": 300.0,
             "V_ll": 141.0,
@@ -24,6 +51,32 @@ SCENARIO_PRESETS = [
         "label": "②キャリア周波数",
         "hint": "f_c を 1kHz から増やすとキャリア高調波ピークが高周波側へ移動し、電流リプルが減少する。",
         "focus": "スイッチング周波数と高調波分布の関係を観察する。",
+        "learning_objective": "m_f と高調波帯域の関係を把握する。",
+        "prerequisites": [
+            "V_dc, V_LL, f, R, L を固定して比較する。",
+            "FFT 窓関数は Hann に固定する。",
+        ],
+        "procedure": [
+            "f_c を 1kHz から 10kHz に上げる。",
+            "FFT の主ピーク帯域の移動を確認する。",
+            "相電流リプルの変化を併せて確認する。",
+        ],
+        "expected_observation": [
+            {
+                "text": "周波数変調率 m_f が増加する。",
+                "metric": "m_f",
+                "comparison": "ge",
+                "value": 20.0,
+            },
+            {
+                "text": "キャリア高調波群が高周波側へ移動する。",
+            },
+        ],
+        "uncertainty_notes": [
+            "THD_V は生PWM電圧基準のため、単純な大小比較のみで良否を決めない。",
+        ],
+        "recommended_compare_modes": ["carrier", "carrier_two_phase"],
+        "tags": ["carrier_frequency", "harmonics", "mf"],
         "sliders": {
             "V_dc": 300.0,
             "V_ll": 141.0,
@@ -43,6 +96,29 @@ SCENARIO_PRESETS = [
         "label": "③L平滑効果",
         "hint": "L = 0.1mH で電流リプルが大きく、50mH まで上げると正弦波に近づく。",
         "focus": "RL 負荷の平滑効果と高周波抑制を比較する。",
+        "learning_objective": "インダクタンス増加時のリプル抑制効果を理解する。",
+        "prerequisites": [
+            "R は固定し、L のみを変化させる。",
+            "評価対象は相電流 i_u と THD_I を優先する。",
+        ],
+        "procedure": [
+            "L を 0.1mH から 50mH へ上げる。",
+            "電流波形の高周波リプルを比較する。",
+            "FFT 表示対象を i_u にして THD_I を確認する。",
+        ],
+        "expected_observation": [
+            {
+                "text": "電流の高周波成分が減少し、THD_I が低下傾向になる。",
+            },
+            {
+                "text": "位相遅れ（phi）が増える傾向を示す。",
+            },
+        ],
+        "uncertainty_notes": [
+            "THD_I の絶対値は f_c と窓関数設定の影響を受ける。",
+        ],
+        "recommended_compare_modes": ["carrier"],
+        "tags": ["inductance", "ripple", "current"],
         "sliders": {
             "V_dc": 300.0,
             "V_ll": 141.0,
@@ -62,6 +138,32 @@ SCENARIO_PRESETS = [
         "label": "④位相遅れ",
         "hint": "L = 50mH, R = 5Ω で PF1 が小さくなり、電流が電圧から大きく遅れる。",
         "focus": "cos(phi) と FFT ベースの PF1 を比較する。",
+        "learning_objective": "位相遅れと力率の関係を時系列・FFTの両面で把握する。",
+        "prerequisites": [
+            "FFT 表示対象は i_u に設定する。",
+            "R と L の比率を変え、時定数差を作る。",
+        ],
+        "procedure": [
+            "R=5Ω, L=50mH で波形を確認する。",
+            "cos(phi) と PF1(FFT) の値を比較する。",
+            "R を増やして位相遅れの減少を確認する。",
+        ],
+        "expected_observation": [
+            {
+                "text": "PF1 が 1 未満で、位相遅れに応じて低下する。",
+                "metric": "PF1",
+                "comparison": "le",
+                "value": 0.95,
+            },
+            {
+                "text": "phi が正（遅れ）として表示される。",
+            },
+        ],
+        "uncertainty_notes": [
+            "PF1 は基本波のみの力率であり、全高調波を含む総合力率とは異なる。",
+        ],
+        "recommended_compare_modes": ["carrier"],
+        "tags": ["power_factor", "phase", "rl_load"],
         "sliders": {
             "V_dc": 300.0,
             "V_ll": 141.0,
@@ -79,8 +181,34 @@ SCENARIO_PRESETS = [
     },
     {
         "label": "⑤過変調",
-        "hint": "V_LL = 220V で m_a > 1。Overmod View ならクランプせず、参照波と出力の変化を観察できる。",
+        "hint": "V_LL = 220V で m_a > 1。Overmod View ON では線形クランプを無効化し、指令波の飽和と波形歪みを観察できる。",
         "focus": "線形クランプ有無での過変調挙動を比較する。",
+        "learning_objective": "過変調での波形歪みと基本波利用率のトレードオフを理解する。",
+        "prerequisites": [
+            "V_dc は 300V に固定する。",
+            "Overmod View の ON/OFF を同一条件で比較する。",
+        ],
+        "procedure": [
+            "V_LL を 220V に設定して Overmod View OFF を確認する。",
+            "同条件で Overmod View ON に切り替える。",
+            "m_a と電圧波形歪みの違いを比較する。",
+        ],
+        "expected_observation": [
+            {
+                "text": "m_a が 1 を超える。",
+                "metric": "m_a",
+                "comparison": "ge",
+                "value": 1.0,
+            },
+            {
+                "text": "Overmod View ON で線形クランプ無効の挙動を示す。",
+            },
+        ],
+        "uncertainty_notes": [
+            "歪みの評価は THD だけでなく低次成分の増加も確認する。",
+        ],
+        "recommended_compare_modes": ["carrier", "space_vector"],
+        "tags": ["overmodulation", "clamp", "nonlinear"],
         "sliders": {
             "V_dc": 300.0,
             "V_ll": 220.0,
@@ -98,8 +226,31 @@ SCENARIO_PRESETS = [
     },
     {
         "label": "⑥SVPWM比較",
-        "hint": "SVPWM は線形範囲が拡張され、同一 V_dc でより高い基本波が得られる。",
-        "focus": "Natural と SVPWM の m_a 上限と基本波振幅を比較する。",
+        "hint": "SVPWM（min-max 零相注入）は線形上限が拡張される。差は m_a が高い条件で顕在化しやすい。",
+        "focus": "三角波比較と SVPWM の線形上限・高変調時挙動を比較する。",
+        "learning_objective": "連続PWM系での電圧利用率差を比較する。",
+        "prerequisites": [
+            "比較モードは carrier と space_vector を用いる。",
+            "V_dc, f_c, 負荷条件は固定する。",
+        ],
+        "procedure": [
+            "V_LL を高め（例: 170-190V）に設定する。",
+            "carrier と space_vector を切り替える。",
+            "V1, THD_V, m_a を比較する。",
+        ],
+        "expected_observation": [
+            {
+                "text": "高変調条件で SVPWM 側の有効利用率が高い傾向を示す。",
+            },
+            {
+                "text": "m_a が高いほど差が顕在化しやすい。",
+            },
+        ],
+        "uncertainty_notes": [
+            "低変調率では差が小さく、視覚的に判別しにくい場合がある。",
+        ],
+        "recommended_compare_modes": ["carrier", "space_vector"],
+        "tags": ["svpwm", "zero_sequence", "voltage_utilization"],
         "sliders": {
             "V_dc": 300.0,
             "V_ll": 180.0,
@@ -111,6 +262,132 @@ SCENARIO_PRESETS = [
             "L": 10.0,
         },
         "modulation_mode": "space_vector",
+        "overmod_view": False,
+        "fft_target": "voltage",
+        "fft_window": "hann",
+    },
+    {
+        "label": "⑦二相変調(DPWM)",
+        "hint": "二相変調では 60 度クランプ区間が生じ、スイッチング損失低減が期待できる一方で低次成分の増加傾向を確認できる。",
+        "focus": "連続PWMと二相変調のクランプ区間・高調波分布を比較する。",
+        "learning_objective": "DPWM のクランプ動作とスペクトル特性を把握する。",
+        "prerequisites": [
+            "比較対象として carrier を用意する。",
+            "同一 V_dc, V_LL, f, f_c 条件で比較する。",
+        ],
+        "procedure": [
+            "carrier と carrier_two_phase を切り替える。",
+            "スイッチングパターンで 60 度クランプ区間を確認する。",
+            "FFT で低次成分変化を比較する。",
+        ],
+        "expected_observation": [
+            {
+                "text": "二相変調でクランプ区間が視認できる。",
+            },
+            {
+                "text": "スペクトル分布が連続PWMと異なる。",
+            },
+        ],
+        "uncertainty_notes": [
+            "総損失最小点は導通損とスイッチング損の両方に依存する。",
+        ],
+        "recommended_compare_modes": ["carrier", "carrier_two_phase"],
+        "tags": ["dpwm", "clamp", "switching_loss"],
+        "sliders": {
+            "V_dc": 300.0,
+            "V_ll": 170.0,
+            "f": 50.0,
+            "f_c": 5.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 10.0,
+        },
+        "modulation_mode": "carrier_two_phase",
+        "overmod_view": False,
+        "fft_target": "voltage",
+        "fft_window": "hann",
+    },
+    {
+        "label": "⑧三倍高調波注入",
+        "hint": "三倍高調波注入は線形上限を拡張する。SVPWM と同等の電圧利用率向上を比較しやすい。",
+        "focus": "三角波比較と三倍高調波注入の電圧利用率・スペクトル差を比較する。",
+        "learning_objective": "零相三倍高調波注入の効果を定性的・定量的に確認する。",
+        "prerequisites": [
+            "carrier と carrier_third_harmonic を比較する。",
+            "高変調率条件で差を観測する。",
+        ],
+        "procedure": [
+            "V_LL を高めに設定して両方式を切り替える。",
+            "V1 と m_a の関係を比較する。",
+            "FFT でスペクトル分布の差を確認する。",
+        ],
+        "expected_observation": [
+            {
+                "text": "線形上限拡張により高変調での運転余裕が増える。",
+            },
+            {
+                "text": "SVPWM と類似した利用率向上傾向を示す。",
+            },
+        ],
+        "uncertainty_notes": [
+            "THD の優劣は負荷条件と評価帯域に依存する。",
+        ],
+        "recommended_compare_modes": ["carrier", "carrier_third_harmonic", "space_vector"],
+        "tags": ["third_harmonic", "zero_sequence", "voltage_utilization"],
+        "sliders": {
+            "V_dc": 300.0,
+            "V_ll": 180.0,
+            "f": 50.0,
+            "f_c": 5.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 10.0,
+        },
+        "modulation_mode": "carrier_third_harmonic",
+        "overmod_view": False,
+        "fft_target": "voltage",
+        "fft_window": "hann",
+    },
+    {
+        "label": "⑨SVPWM二相変調比較",
+        "hint": "空間ベクトル(二相変調)では SVPWM 系で 60 度クランプが導入される。連続SVPWMとの差を確認する。",
+        "focus": "space_vector と space_vector_two_phase の差を直接比較する。",
+        "learning_objective": "SVPWM 系における連続/不連続変調の違いを整理する。",
+        "prerequisites": [
+            "space_vector と space_vector_two_phase を同条件で比較する。",
+            "FFT は v_uv 表示を優先する。",
+        ],
+        "procedure": [
+            "modulation_mode を空間ベクトルと空間ベクトル(二相変調)で切り替える。",
+            "スイッチングパターンでクランプ区間の有無を確認する。",
+            "FFT でスペクトル差を確認する。",
+        ],
+        "expected_observation": [
+            {
+                "text": "space_vector_two_phase でクランプ区間が現れる。",
+            },
+            {
+                "text": "THD_V や低次成分分布が連続SVPWMと異なる。",
+            },
+        ],
+        "uncertainty_notes": [
+            "低変調率では差が視覚的に小さい場合がある。",
+        ],
+        "recommended_compare_modes": ["space_vector", "space_vector_two_phase"],
+        "tags": ["svpwm", "dpwm", "two_phase"],
+        "sliders": {
+            "V_dc": 300.0,
+            "V_ll": 170.0,
+            "f": 50.0,
+            "f_c": 5.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 10.0,
+        },
+        "modulation_mode": "space_vector_two_phase",
         "overmod_view": False,
         "fft_target": "voltage",
         "fft_window": "hann",

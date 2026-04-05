@@ -24,6 +24,7 @@ let currentResponse = null;
 let baselineResponse = null;
 let debounceHandle = null;
 let scenarioFetchFailed = false;
+let activeScenarioIndex = null;
 let svpwmAnimationTimer = null;
 let svpwmAnimationState = null;
 let svpwmAnimationPaused = false;
@@ -1029,7 +1030,130 @@ function renderComparisonPanel() {
   `).join("");
 }
 
-function renderScenarioGuide(index = null) {
+function renderGuideList(elementId, items, ordered = false) {
+  const element = document.getElementById(elementId);
+  if (!element) {
+    return;
+  }
+  element.innerHTML = "";
+  const values = Array.isArray(items) ? items.filter((item) => typeof item === "string" && item.trim() !== "") : [];
+  if (values.length === 0) {
+    const li = document.createElement("li");
+    li.textContent = ordered ? "手順は未設定です。" : "記載はありません。";
+    element.appendChild(li);
+    return;
+  }
+  values.forEach((value) => {
+    const li = document.createElement("li");
+    li.textContent = value;
+    element.appendChild(li);
+  });
+}
+
+function getScenarioMetricValue(metricName, sourceResponse = currentResponse) {
+  if (!sourceResponse || !sourceResponse.metrics || !metricName) {
+    return null;
+  }
+  const metrics = sourceResponse.metrics;
+  const aliases = {
+    pf1_fft: "PF1",
+    pf1: "PF1",
+    thd_v: "THD_V",
+    thd_i: "THD_I",
+    v1: "V1_pk",
+    i1: "I1_pk",
+    phi_deg: "phi_deg",
+  };
+  const key = aliases[String(metricName).toLowerCase()] || metricName;
+  const value = metrics[key];
+  if (Number.isFinite(value)) {
+    return value;
+  }
+  if (key === "phi_deg" && Number.isFinite(metrics.phi)) {
+    return metrics.phi * 180.0 / Math.PI;
+  }
+  return null;
+}
+
+function evaluateScenarioObservation(observation) {
+  const text = typeof observation?.text === "string" ? observation.text : "期待観測";
+  const metricName = observation?.metric;
+  const comparison = observation?.comparison;
+  if (!metricName || !comparison) {
+    return { text, statusLabel: "観測待ち", statusClass: "pending" };
+  }
+
+  const currentValue = getScenarioMetricValue(metricName, currentResponse);
+  if (!Number.isFinite(currentValue)) {
+    return { text, statusLabel: "未判定", statusClass: "pending" };
+  }
+
+  let passed = false;
+  if (comparison === "ge") {
+    passed = currentValue >= Number(observation.value);
+  } else if (comparison === "gt") {
+    passed = currentValue > Number(observation.value);
+  } else if (comparison === "le") {
+    passed = currentValue <= Number(observation.value);
+  } else if (comparison === "lt") {
+    passed = currentValue < Number(observation.value);
+  } else if (comparison === "between") {
+    passed = currentValue >= Number(observation.min) && currentValue <= Number(observation.max);
+  } else if (comparison === "approx") {
+    const tolerance = Number.isFinite(Number(observation.tolerance)) ? Number(observation.tolerance) : 0.05;
+    passed = Math.abs(currentValue - Number(observation.value)) <= tolerance;
+  } else if (comparison === "delta_ge" || comparison === "delta_le") {
+    const baselineValue = getScenarioMetricValue(metricName, baselineResponse);
+    if (!Number.isFinite(baselineValue)) {
+      return { text, statusLabel: "未判定", statusClass: "pending" };
+    }
+    const delta = currentValue - baselineValue;
+    passed = comparison === "delta_ge" ? delta >= Number(observation.value) : delta <= Number(observation.value);
+  } else {
+    return { text, statusLabel: "未判定", statusClass: "pending" };
+  }
+
+  return {
+    text,
+    statusLabel: passed ? "達成" : "未達",
+    statusClass: passed ? "ok" : "ng",
+  };
+}
+
+function renderScenarioExpected(expectedList) {
+  const container = document.getElementById("scenarioExpected");
+  if (!container) {
+    return;
+  }
+  container.innerHTML = "";
+
+  const items = Array.isArray(expectedList) ? expectedList : [];
+  if (items.length === 0) {
+    const paragraph = document.createElement("p");
+    paragraph.textContent = "期待観測は未設定です。";
+    container.appendChild(paragraph);
+    return;
+  }
+
+  items.forEach((observation) => {
+    const item = evaluateScenarioObservation(observation);
+    const block = document.createElement("div");
+    block.className = "guide-expected-item";
+
+    const text = document.createElement("p");
+    text.textContent = item.text;
+    block.appendChild(text);
+
+    const status = document.createElement("span");
+    status.className = `guide-status ${item.statusClass}`;
+    status.textContent = item.statusLabel;
+    block.appendChild(status);
+
+    container.appendChild(block);
+  });
+}
+
+function renderScenarioGuide(index = activeScenarioIndex) {
   const container = document.getElementById("scenarioButtons");
   container.innerHTML = "";
   scenarioPresets.forEach((scenario, scenarioIndex) => {
@@ -1042,16 +1166,29 @@ function renderScenarioGuide(index = null) {
   });
 
   if (index === null || !scenarioPresets[index]) {
+    activeScenarioIndex = null;
     document.getElementById("scenarioTitle").textContent = "学習シナリオを選択";
     document.getElementById("scenarioFocus").textContent = "目的に応じた条件を即座に呼び出せます。";
     document.getElementById("scenarioHint").textContent = "ヒントはここに表示されます。";
+    document.getElementById("scenarioObjective").textContent = "目的はここに表示されます。";
+    renderGuideList("scenarioPrerequisites", []);
+    renderGuideList("scenarioProcedure", [], true);
+    renderScenarioExpected([]);
+    renderGuideList("scenarioUncertainty", []);
     return;
   }
 
+  activeScenarioIndex = index;
   const active = scenarioPresets[index];
   document.getElementById("scenarioTitle").textContent = active.label;
   document.getElementById("scenarioFocus").textContent = active.focus || "学習焦点を表示します。";
-  document.getElementById("scenarioHint").textContent = active.hint;
+  document.getElementById("scenarioHint").textContent = active.hint || "ヒントはありません。";
+  document.getElementById("scenarioObjective").textContent =
+    active.learning_objective || active.focus || "学習目的は未設定です。";
+  renderGuideList("scenarioPrerequisites", active.prerequisites);
+  renderGuideList("scenarioProcedure", active.procedure, true);
+  renderScenarioExpected(active.expected_observation);
+  renderGuideList("scenarioUncertainty", active.uncertainty_notes);
 }
 
 function applyScenario(index) {
@@ -1075,6 +1212,7 @@ function applyScenario(index) {
   updateModulationHint();
   document.getElementById("fftTarget").value = scenario.fft_target === "current" ? "i_u" : "v_uv";
   document.getElementById("fftWindow").value = scenario.fft_window;
+  activeScenarioIndex = index;
   renderScenarioGuide(index);
   scheduleSimulation();
 }
@@ -1892,6 +2030,7 @@ async function runSimulation() {
     renderTheoryPanel(data.metrics);
     renderComparisonPanel();
     renderPlots(data);
+    renderScenarioGuide(activeScenarioIndex);
     setStatus(
       scenarioFetchFailed ? "API 接続中 / ガイド取得失敗" : "API 接続中",
       scenarioFetchFailed

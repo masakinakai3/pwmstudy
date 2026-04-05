@@ -275,6 +275,75 @@ select,
   margin: 6px 0 0;
 }
 
+.guide-group {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(24, 33, 38, 0.14);
+}
+
+.guide-group h4 {
+  margin: 0;
+  font-size: 0.84rem;
+  letter-spacing: 0.05em;
+  color: var(--accent-deep);
+}
+
+.guide-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.guide-list.ordered {
+  padding-left: 20px;
+}
+
+.guide-expected {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.guide-expected-item {
+  border: 1px solid rgba(24, 33, 38, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.66);
+  padding: 8px 10px;
+}
+
+.guide-expected-item p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.guide-status {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.guide-status.ok {
+  background: rgba(78, 122, 118, 0.18);
+  color: #2f5f5a;
+}
+
+.guide-status.ng {
+  background: rgba(193, 79, 44, 0.2);
+  color: #9f3b20;
+}
+
+.guide-status.pending {
+  background: rgba(106, 84, 149, 0.18);
+  color: #5b487f;
+}
+
 .dashboard-panel {
   display: grid;
   gap: 20px;
