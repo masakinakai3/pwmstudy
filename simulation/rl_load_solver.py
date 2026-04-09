@@ -67,6 +67,12 @@ def solve_rl_load(
     Returns:
         (i_u, i_v, i_w): 三相電流 [A]
     """
+    if L <= 0.0:
+        raise ValueError(f"負荷インダクタンス L は正の値でなければなりません: L={L}")
+    if R < 0.0:
+        raise ValueError(f"負荷抵抗 R は非負の値でなければなりません: R={R}")
+    if dt <= 0.0:
+        raise ValueError(f"時間刻み dt は正の値でなければなりません: dt={dt}")
     n_points = len(v_uN)
     voltages = np.vstack((v_uN, v_vN, v_wN))  # [V]
     currents = np.zeros((3, n_points), dtype=float)  # [A]

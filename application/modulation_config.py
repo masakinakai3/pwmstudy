@@ -75,7 +75,7 @@ def build_modulation_summary_label(
         return MODULATION_MODE_LABELS[modulation_mode]
 
     return (
-        f"{REFERENCE_MODE_LABELS[reference_mode]} / "
-        f"{SAMPLING_MODE_LABELS[sampling_mode]} / "
-        f"{CLAMP_MODE_LABELS[clamp_mode]}"
+        f"{REFERENCE_MODE_LABELS.get(reference_mode, reference_mode)} / "
+        f"{SAMPLING_MODE_LABELS.get(sampling_mode, sampling_mode)} / "
+        f"{CLAMP_MODE_LABELS.get(clamp_mode, clamp_mode)}"
     )

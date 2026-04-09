@@ -151,7 +151,7 @@
   "V_on": 0.0,
   "R": 10.0,
   "L": 0.01,
-  "pwm_mode": "natural",
+  "modulation_mode": "carrier",
   "fft_target": "v_uv",
   "fft_window": "hann"
 }
@@ -172,10 +172,10 @@ MVP の入力バリデーション初期値は、現行 UI と合わせて次を
 | `R` | [Ω] | 0.1–100 |
 | `L` | [H] | 0.1e-3–100e-3 |
 
-`pwm_mode` は既存 UI と同じく `natural` / `third_harmonic` を使う。内部では現行実装に合わせて、
+`modulation_mode` は実装では `"carrier"` / `"carrier_third_harmonic"` / `"carrier_two_phase"` / `"space_vector"` / `"space_vector_two_phase"` を受け付ける（旧計画の `pwm_mode` フィールドから改名）。内部では現行実装に合わせて、
 
-- `natural` → `reference_mode="sinusoidal"` + `sampling_mode="natural"`
-- `third_harmonic` → `reference_mode="third_harmonic"` + `sampling_mode="natural"`
+- `"carrier"` → `reference_mode="sinusoidal"` + `sampling_mode="natural"`
+- `"carrier_third_harmonic"` → `reference_mode="third_harmonic"` + `sampling_mode="natural"`
 
 へ写像する。
 

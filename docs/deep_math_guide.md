@@ -181,7 +181,11 @@ a = e^{-R\Delta t/L},
 b = \frac{1-a}{R}
 $$
 
-となります（$R\to 0$ 近傍では極限形で評価）。
+となります。
+
+> **R=0 の極限**: $R \to 0$ のとき分母 $R$ がゼロに近づくため、$b = (1 - e^{-R\Delta t/L})/R$ をテイラー展開すると
+> $$b \xrightarrow{R\to 0} \frac{\Delta t}{L}$$
+> となります。実装では `numpy.expm1` を用いて $b = (\Delta t/L)\cdot(-\mathrm{expm1}(-x)/x)$（$x = R\Delta t/L$）と計算することで、$x \approx 0$ での数値的桁落ちを回避しています。
 
 この形は高周波 PWM 入力に対して数値安定性が高く、
 本プロジェクトの RL ソルバの基本です。

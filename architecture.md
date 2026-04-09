@@ -282,11 +282,15 @@ tests/test_simulation.py に 65 件のテストを集約し、以下を検証す
 │   ├── user_guide.md
 │   └── web_api_contract.md
 ├── README.md
+├── CHANGELOG.md
+├── LICENSE
 ├── architecture.md
 ├── implementation_plan.md
 ├── improvement_plan.md
+├── web_migration_plan.md
 ├── Dockerfile
 ├── docker-compose.yml
+├── requirements.txt
 └── requirements-web.txt
 ```
 

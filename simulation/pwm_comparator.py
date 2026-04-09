@@ -31,10 +31,16 @@ def apply_sampling_mode(
         t: 時間配列 [s]
         f_c: キャリア周波数 [Hz]
         sampling_mode: サンプリング方式
-            natural: 連続比較
+            natural: 連続比較（入力をそのまま返す。Regular sampling は削除済み）
 
     Returns:
         PWM 比較に使う変調信号 3相
+
+    Note:
+        現在 "natural" のみをサポート。"natural" は連続比較であり変調信号を
+        変換しないため、この関数はモード検証のみを行い入力値をそのまま返す
+        意図的な no-op である。将来 regular sampling 等を追加する際に
+        ここで信号を変換する実装を行うための hook として残している。
     """
     _validate_sampling_mode(sampling_mode)
 

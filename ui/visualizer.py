@@ -25,24 +25,14 @@ from application.modulation_config import (
     MODULATION_MODE_LABELS,
     normalize_modulation_mode,
 )
-
-
-# キャリア1周期あたりのサンプル数
-POINTS_PER_CARRIER = 100
-# 表示する出力波形の周期数
-N_DISPLAY_CYCLES = 2
-# 助走周期数の最小値（定常状態到達用）
-N_WARMUP_CYCLES_MIN = 5
-# 非理想モデルの電流-電圧整合反復回数
-NONIDEAL_CORRECTION_STEPS = 2
-FFT_TARGET_LABELS = {
-    "voltage": "Line Voltage v_uv",
-    "current": "Phase Current i_u",
-}
-FFT_WINDOW_LABELS = {
-    "hann": "Hann",
-    "rectangular": "Rectangular",
-}
+from application.simulation_runner import (
+    FFT_TARGET_LABELS,
+    FFT_WINDOW_LABELS,
+    N_DISPLAY_CYCLES,
+    N_WARMUP_CYCLES_MIN,
+    NONIDEAL_CORRECTION_STEPS,
+    POINTS_PER_CARRIER,
+)
 
 
 def _select_ui_font_family() -> str:
@@ -357,8 +347,8 @@ class InverterVisualizer:
                 initialdir=str(Path.cwd()),
             )
             root.destroy()
-        except Exception:
-            self._hint_text.set_text("JSON読込に失敗: ファイル選択ダイアログを開けませんでした")
+        except Exception as exc:
+            self._hint_text.set_text(f"JSON読込に失敗: ファイル選択ダイアログを開けませんでした ({type(exc).__name__}: {exc})")
             self._fig.canvas.draw_idle()
             return
 
@@ -368,8 +358,8 @@ class InverterVisualizer:
         try:
             with open(file_path, "r", encoding="utf-8") as f_in:
                 payload = json.load(f_in)
-        except Exception:
-            self._hint_text.set_text("JSON読込に失敗: ファイルを解析できませんでした")
+        except Exception as exc:
+            self._hint_text.set_text(f"JSON読込に失敗: ファイルを解析できませんでした ({type(exc).__name__}: {exc})")
             self._fig.canvas.draw_idle()
             return
 

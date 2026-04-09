@@ -51,7 +51,12 @@ def _apply_discontinuous_offset(
 
 
 def _validate_reference_mode(mode: str) -> None:
-    """参照生成モード名を検証する."""
+    """参照生成モード名を検証する.
+
+    Note:
+        "svpwm" は旧名称エイリアスとして受け入れる。呼び出し後に
+        _normalize_reference_mode で "minmax" へ変換される。
+    """
     valid_modes = {"sinusoidal", "third_harmonic", "minmax", "svpwm"}
     if mode not in valid_modes:
         raise ValueError(f"Unsupported reference mode: {mode}")

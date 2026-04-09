@@ -1,4 +1,12 @@
 /* SPDX-License-Identifier: MIT */
+/*
+ * セキュリティ注記 (XSS):
+ * このファイルの複数箇所では `element.innerHTML = ...` にサーバーレスポンス値を
+ * 直接文字列補間している。現在 /scenarios エンドポイントは Python ハードコード値のみを
+ * 返すため XSS リスクは実質ゼロだが、将来エンドポイントがユーザー入力や DB 由来の
+ * 値を返すようになった場合は XSS が成立する構造である。
+ * 変更前に必ず HTMLエスケープ処理（`textContent` への代入か DOMPurify 等）を導入すること。
+ */
 const defaultDisplayValues = {
   V_dc: 300.0,
   V_ll_rms: 141.0,

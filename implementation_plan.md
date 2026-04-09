@@ -32,7 +32,7 @@
 | NumPy | 数値計算、配列演算、FFT | 必須 |
 | Matplotlib | 描画、スライダー UI | 必須 |
 | pytest | テスト実行 | 開発時必須 |
-| SciPy | 現行コードでは必須ではない | requirements には存在するが未使用 |
+| SciPy | 使用しない | requirements.txt から削除済み（未使用のため） |
 
 ### 3.3 守るべき実装ルール
 

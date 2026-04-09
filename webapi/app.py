@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -48,8 +48,14 @@ def scenarios() -> list[dict[str, object]]:
 @app.post("/simulate")
 def simulate(request: SimulationRequest) -> dict[str, object]:
     """シミュレーション結果を JSON で返す."""
-    results = run_simulation(request.to_simulation_params())
+    try:
+        results = run_simulation(request.to_simulation_params())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"シミュレーション実行エラー: {type(exc).__name__}: {exc}") from exc
     response = build_web_response(results)
+    # build_web_response は内部表現 ("voltage"/"current") で fft.target を書くが、
+    # API 公開表現は "v_uv"/"i_u" であるため上書きする。
+    # TODO: この変換は build_web_response または to_simulation_params 内で完結させることが望ましい。
     response["meta"]["fft_target"] = request.fft_target
     response["fft"]["target"] = request.fft_target
 

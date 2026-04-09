@@ -34,7 +34,10 @@ class SimulationRequest(BaseModel):
     V_on: float = Field(ge=0.0, le=5.0)
     R: float = Field(ge=0.1, le=100.0)
     L: float = Field(ge=0.1e-3, le=100e-3)
-    modulation_mode: ModulationMode | None = None
+    modulation_mode: ModulationMode | None = Field(
+        default=None,
+        description='変調方式。省略または null の場合は "carrier"（三角波比較 + 正弦波基準）として扱われる。',
+    )
     overmod_view: bool = False
     fft_target: ApiFftTarget = "v_uv"
     fft_window: FftWindow = "hann"

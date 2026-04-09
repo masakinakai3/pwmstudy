@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 
@@ -66,7 +66,7 @@ def build_export_payload(
         JSON シリアライズ可能な辞書。
     """
     if timestamp is None:
-        timestamp = datetime.now()
+        timestamp = datetime.now(timezone.utc)
 
     meta = results["meta"]
     metrics = results["metrics"]

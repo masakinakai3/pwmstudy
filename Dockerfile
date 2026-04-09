@@ -11,7 +11,7 @@ FROM python:3.12-slim
 
 LABEL org.opencontainers.image.title="3lvlpwm-simulator" \
       org.opencontainers.image.description="Three-phase PWM inverter learning simulator" \
-      org.opencontainers.image.version="phase5-v1"
+      org.opencontainers.image.version="phase6-v1"
 
 # セキュリティ: 非 root ユーザで実行
 RUN useradd --system --create-home --uid 1001 appuser
