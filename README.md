@@ -1,6 +1,8 @@
-# 三相PWMインバータ学習シミュレータ
+# 三相2レベルPWMインバータ学習シミュレータ
 
-三相PWMインバータの原理を対話的に学習するためのシミュレーションソフトウェアです。
+三相2レベル電圧形PWMインバータの原理を対話的に学習するためのシミュレーションソフトウェアです。
+
+> **プロジェクト名 `3lvlpwm` について**: 名称の「3lvl」は線間電圧が $\{-V_{dc}, 0, +V_{dc}\}$ の **3値** を取ることに由来します。インバータのトポロジは **2レベル** です（NPC等の3レベルインバータではありません）。
 desktop UI は 6 段構成で指令信号・スイッチングパターン・線間電圧・相電圧・負荷電流・FFT を表示し、web UI は主要 4 セクションで指令信号・スイッチングパターン・電圧・電流・FFT を表示します。
 
 ## 特徴
@@ -29,7 +31,7 @@ desktop UI は 6 段構成で指令信号・スイッチングパターン・線
 pip install -r requirements.txt
 ```
 
-依存ライブラリ: NumPy, Matplotlib, SciPy, Pydantic, pytest, FastAPI, Uvicorn, httpx
+依存ライブラリ: NumPy, Matplotlib, Pydantic, pytest, FastAPI, Uvicorn, httpx
 
 ## 実行
 
@@ -69,6 +71,7 @@ docker compose up --build
 | `docker compose logs -f` | リアルタイムログ |
 
 > **Web UI の外部依存**: 現在の web UI は Plotly を `cdn.plot.ly` から読み込みます。閉域環境や完全オフライン環境では、Plotly 資産を `webui/` 配下へ同梱する追加対応が必要です。
+
 > **デスクトップ版の位置付け**: `python main.py` による desktop UI は並行維持されます。Docker コンテナには desktop UI は含まれません。
 
 ## テスト
@@ -77,7 +80,7 @@ docker compose up --build
 python -m pytest tests/ -v
 ```
 
-65 件のテスト（物理妥当性検証 + application 層 + API/UI 疎通）が実行されます。
+物理妥当性検証・application 層・API/UI 疎通のテストが実行されます。
 
 ## プロジェクト構成
 
@@ -106,12 +109,15 @@ python -m pytest tests/ -v
 │   ├── styles.css               # Web UI スタイル
 │   └── app.js                   # Web UI ロジック
 ├── tests/
-│   └── test_simulation.py       # 物理妥当性 + application/API/UI テスト（65 件）
+│   └── test_simulation.py       # 物理妥当性 + application/API/UI テスト
 ├── Dockerfile                   # Web API 単体コンテナ
 ├── docker-compose.yml           # Docker Compose 起動定義
 ├── architecture.md              # アーキテクチャ設計書
 ├── implementation_plan.md       # 実装計画書（STEP 1〜8）
 ├── improvement_plan.md          # 改善ロードマップ（完了項目の記録）
+├── web_migration_plan.md        # Web ベース移行案
+├── CHANGELOG.md                 # 変更履歴
+├── LICENSE                      # MIT License
 ├── requirements.txt             # フル依存（desktop + web）
 └── requirements-web.txt         # Web/Docker 専用軽量依存
 ```
@@ -175,6 +181,8 @@ Web UI のベクトル図レンジを次のように切り替えています。
 | 導通電圧降下 | $V_{on}$ | 0 | 0–5 | V |
 | 負荷抵抗 | $R$ | 10 | 0.1–100 | Ω |
 | 負荷インダクタンス | $L$ | 10 | 0.1–100 | mH |
+
+> **API の単位**: POST `/simulate` の入力は SI 単位（Hz, s, H）です。UI 表示の kHz, us, mH とは異なるため、API を直接利用する場合は単位変換に注意してください。
 
 ## シミュレーション処理フロー
 
