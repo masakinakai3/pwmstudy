@@ -109,6 +109,11 @@ python -m pytest tests/ -v
 │   └── app.js                   # Web UI ロジック
 ├── tests/
 │   └── test_simulation.py       # 物理妥当性 + application/API/UI テスト
+├── docs/
+│   ├── deep_math_guide.md       # 数式詳解（ZOH 離散ソルバ・SVPWM・THD・Clarke/Park）
+│   ├── user_guide.md            # 操作手順と学習のポイント
+│   ├── web_api_contract.md      # API 契約（application 層・REST・Web UI 間）
+│   └── assets/                  # SVG 図版（12 ファイル）
 ├── Dockerfile                   # Web API 単体コンテナ
 ├── docker-compose.yml           # Docker Compose 起動定義
 ├── architecture.md              # アーキテクチャ設計書
