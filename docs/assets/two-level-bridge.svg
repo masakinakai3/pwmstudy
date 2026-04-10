@@ -1,0 +1,147 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="960" height="520" viewBox="0 0 960 520"
+     role="img" aria-labelledby="title desc">
+  <title id="title">Two-level three-phase inverter bridge</title>
+  <desc id="desc">Three-phase two-level inverter bridge with U, V, W legs,
+    antiparallel diodes, DC-link capacitor, and Y-connected RL load.</desc>
+  <style>
+    .bg    { fill: #fbf8f2; }
+    .bus   { stroke: #182126; stroke-width: 4; fill: none; stroke-linecap: round; }
+    .wire  { stroke: #182126; stroke-width: 3; fill: none; stroke-linecap: round; }
+    .thin  { stroke: #182126; stroke-width: 1.5; fill: none; stroke-linecap: round; }
+    .dev   { fill: #fffdf8; stroke: #182126; stroke-width: 2; }
+    .diode { fill: #182126; stroke: none; }
+    .dbar  { stroke: #182126; stroke-width: 2; fill: none; }
+    .mid   { fill: #c14f2c; stroke: #182126; stroke-width: 2; }
+    .cap   { stroke: #182126; stroke-width: 4; fill: none; stroke-linecap: round; }
+    .load  { fill: #fffdf8; stroke: #5b6468; stroke-width: 2; }
+    .txt   { font-family: Arial, Helvetica, sans-serif; fill: #182126; font-size: 16px; }
+    .small { font-size: 14px; fill: #5b6468; }
+    .head  { font-size: 24px; font-weight: 700; }
+    .phase { font-size: 20px; font-weight: 600; fill: #c14f2c; }
+  </style>
+
+  <!-- background -->
+  <rect class="bg" width="960" height="520" rx="24" ry="24" />
+
+  <!-- heading -->
+  <text class="txt head" x="42" y="42">Three-phase 2-level inverter bridge</text>
+
+  <!-- ==================== DC bus rails ==================== -->
+  <line class="bus" x1="150" y1="90" x2="700" y2="90" />
+  <text class="txt" x="100" y="95">+Vdc</text>
+  <line class="bus" x1="150" y1="430" x2="700" y2="430" />
+  <text class="txt" x="110" y="435">0 V</text>
+
+  <!-- ==================== DC-link capacitor ==================== -->
+  <line class="wire" x1="150" y1="90" x2="150" y2="234" />
+  <line class="cap" x1="128" y1="240" x2="172" y2="240" />
+  <line class="cap" x1="128" y1="280" x2="172" y2="280" />
+  <text class="txt" x="178" y="266">C</text>
+  <line class="wire" x1="150" y1="286" x2="150" y2="430" />
+
+  <!-- ==================== Leg U (x=280) ==================== -->
+  <!-- phase label above rail -->
+  <text class="txt phase" x="280" y="72" text-anchor="middle">U</text>
+  <!-- top wire -->
+  <line class="wire" x1="280" y1="90" x2="280" y2="140" />
+  <!-- upper switch -->
+  <rect class="dev" x="245" y="140" width="70" height="60" rx="8" ry="8" />
+  <text class="txt" x="280" y="176" text-anchor="middle">Su</text>
+  <!-- upper diode (pointing up) -->
+  <line class="thin" x1="322" y1="145" x2="322" y2="195" />
+  <path class="diode" d="M316,178 L328,178 L322,158 Z" />
+  <line class="dbar" x1="316" y1="158" x2="328" y2="158" />
+  <!-- wire to midpoint -->
+  <line class="wire" x1="280" y1="200" x2="280" y2="260" />
+  <!-- midpoint -->
+  <circle class="mid" cx="280" cy="260" r="6" />
+  <!-- wire to lower switch -->
+  <line class="wire" x1="280" y1="260" x2="280" y2="300" />
+  <!-- lower switch -->
+  <rect class="dev" x="245" y="300" width="70" height="60" rx="8" ry="8" />
+  <!-- lower diode (pointing down) -->
+  <line class="thin" x1="322" y1="305" x2="322" y2="355" />
+  <path class="diode" d="M316,322 L328,322 L322,342 Z" />
+  <line class="dbar" x1="316" y1="342" x2="328" y2="342" />
+  <!-- bottom wire -->
+  <line class="wire" x1="280" y1="360" x2="280" y2="430" />
+
+  <!-- ==================== Leg V (x=440) ==================== -->
+  <text class="txt phase" x="440" y="72" text-anchor="middle">V</text>
+  <line class="wire" x1="440" y1="90" x2="440" y2="140" />
+  <rect class="dev" x="405" y="140" width="70" height="60" rx="8" ry="8" />
+  <text class="txt" x="440" y="176" text-anchor="middle">Sv</text>
+  <line class="thin" x1="482" y1="145" x2="482" y2="195" />
+  <path class="diode" d="M476,178 L488,178 L482,158 Z" />
+  <line class="dbar" x1="476" y1="158" x2="488" y2="158" />
+  <line class="wire" x1="440" y1="200" x2="440" y2="260" />
+  <circle class="mid" cx="440" cy="260" r="6" />
+  <line class="wire" x1="440" y1="260" x2="440" y2="300" />
+  <rect class="dev" x="405" y="300" width="70" height="60" rx="8" ry="8" />
+  <line class="thin" x1="482" y1="305" x2="482" y2="355" />
+  <path class="diode" d="M476,322 L488,322 L482,342 Z" />
+  <line class="dbar" x1="476" y1="342" x2="488" y2="342" />
+  <line class="wire" x1="440" y1="360" x2="440" y2="430" />
+
+  <!-- ==================== Leg W (x=600) ==================== -->
+  <text class="txt phase" x="600" y="72" text-anchor="middle">W</text>
+  <line class="wire" x1="600" y1="90" x2="600" y2="140" />
+  <rect class="dev" x="565" y="140" width="70" height="60" rx="8" ry="8" />
+  <text class="txt" x="600" y="176" text-anchor="middle">Sw</text>
+  <line class="thin" x1="642" y1="145" x2="642" y2="195" />
+  <path class="diode" d="M636,178 L648,178 L642,158 Z" />
+  <line class="dbar" x1="636" y1="158" x2="648" y2="158" />
+  <line class="wire" x1="600" y1="200" x2="600" y2="260" />
+  <circle class="mid" cx="600" cy="260" r="6" />
+  <line class="wire" x1="600" y1="260" x2="600" y2="300" />
+  <rect class="dev" x="565" y="300" width="70" height="60" rx="8" ry="8" />
+  <line class="thin" x1="642" y1="305" x2="642" y2="355" />
+  <path class="diode" d="M636,322 L648,322 L642,342 Z" />
+  <line class="dbar" x1="636" y1="342" x2="648" y2="342" />
+  <line class="wire" x1="600" y1="360" x2="600" y2="430" />
+
+  <!-- ==================== Y-connected RL load ==================== -->
+  <!-- U output: midpoint to load (angled up-right) -->
+  <path class="wire" d="M286,260 L730,185" />
+  <!-- V output: midpoint to load, arc hop over W leg at x=600 -->
+  <path class="wire" d="M446,260 L590,260 A10,10 0 0 1 610,260 L730,260" />
+  <!-- W output: midpoint to load (angled down-right) -->
+  <path class="wire" d="M606,260 L730,335" />
+
+  <!-- RL load boxes -->
+  <rect class="load" x="730" y="172" width="60" height="26" rx="4" ry="4" />
+  <text class="txt small" x="739" y="190">R, L</text>
+  <rect class="load" x="730" y="247" width="60" height="26" rx="4" ry="4" />
+  <text class="txt small" x="739" y="265">R, L</text>
+  <rect class="load" x="730" y="322" width="60" height="26" rx="4" ry="4" />
+  <text class="txt small" x="739" y="340">R, L</text>
+
+  <!-- wires from loads to neutral N -->
+  <path class="wire" d="M790,185 L860,260" />
+  <path class="wire" d="M790,260 L860,260" />
+  <path class="wire" d="M790,335 L860,260" />
+
+  <!-- neutral point -->
+  <circle class="mid" cx="860" cy="260" r="6" />
+  <text class="txt" x="872" y="264">N</text>
+
+  <!-- ==================== Annotations ==================== -->
+  <!-- Vdc double-headed arrow between rails -->
+  <line stroke="#c14f2c" stroke-width="2" x1="718" y1="100" x2="718" y2="420" />
+  <path d="M714,106 L718,92 L722,106" fill="none" stroke="#c14f2c" stroke-width="2" />
+  <path d="M714,414 L718,428 L722,414" fill="none" stroke="#c14f2c" stroke-width="2" />
+  <text class="txt" x="726" y="264"
+        style="font-size:14px; fill:#c14f2c; font-style:italic">Vdc</text>
+
+  <!-- vuO: pole voltage (U midpoint to 0 V rail) -->
+  <line stroke="#5b6468" stroke-width="1" stroke-dasharray="4 3"
+        x1="252" y1="268" x2="252" y2="424" />
+  <path d="M249,418 L252,428 L255,418" fill="none" stroke="#5b6468" stroke-width="1.2" />
+  <text class="txt" x="220" y="360"
+        style="font-size:14px; fill:#5b6468; font-style:italic">vuO</text>
+
+  <!-- vuN: phase voltage (U midpoint to neutral N) -->
+  <text class="txt" x="490" y="212"
+        style="font-size:14px; fill:#5b6468; font-style:italic">vuN</text>
+</svg>

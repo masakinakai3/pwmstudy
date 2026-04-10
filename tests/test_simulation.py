@@ -1208,6 +1208,30 @@ class TestEducationContentRegression:
         assert "導出を1行で書くと" in text
         assert "シミュレータ observer の注記" not in text
 
+    def test_deep_math_guide_references_expected_svg_figures(self) -> None:
+        """deep_math_guide が主要 SVG 図を参照し、実ファイルも存在する."""
+        root = Path(__file__).resolve().parents[1]
+        text = self._read_repo_text("docs/deep_math_guide.md")
+
+        expected_assets = [
+            "assets/pwm-signal-chain.svg",
+            "assets/two-level-bridge.svg",
+            "assets/three-phase-waveforms.svg",
+            "assets/triangular-carrier-annotated.svg",
+            "assets/modulation-index-visual.svg",
+            "assets/carrier-comparison-waveform.svg",
+            "assets/zero-sequence-comparison.svg",
+            "assets/dpwm-clamped-waveform.svg",
+            "assets/svpwm-hexagon.svg",
+            "assets/svpwm-switching-sequence.svg",
+            "assets/deadtime-timing.svg",
+            "assets/overmodulation-transition.svg",
+        ]
+
+        for asset in expected_assets:
+            assert asset in text
+            assert (root / "docs" / asset.replace("assets/", "assets/")).exists()
+
     def test_webui_metric_labels_are_unit_explicit(self) -> None:
         """Web UI の V1/I1 ラベルが線間/相と peak を明示する."""
         text = self._read_repo_text("webui/app.js")

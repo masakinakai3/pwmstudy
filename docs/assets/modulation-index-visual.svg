@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="420" viewBox="0 0 800 420" role="img" aria-labelledby="title desc">
+  <title id="title">Modulation index visual relationship</title>
+  <desc id="desc">Carrier-reference comparison showing modulation index, duty cycle, and linear operating limits.</desc>
+  <style>
+    .bg { fill: #fbf8f2; }
+    .txt { font-family: Arial, Helvetica, sans-serif; fill: #182126; }
+    .head { font-size: 24px; font-weight: 700; }
+    .sub { font-size: 18px; font-weight: 700; fill: #182126; }
+    .label { font-size: 14px; fill: #5b6468; }
+    .info { font-size: 16px; fill: #5b6468; }
+    .info-em { font-size: 16px; fill: #182126; font-weight: 600; }
+    .carrier { stroke: #4e7a76; stroke-width: 3; fill: none; }
+    .ref-line { stroke: #c14f2c; stroke-width: 2; stroke-dasharray: 8 4; fill: none; }
+    .dim-line { stroke: #5b6468; stroke-width: 1.2; fill: none; marker-start: url(#dim-start); marker-end: url(#dim-end); }
+    .dim-text { font-size: 13px; fill: #5b6468; }
+    .axis-line { stroke: #c4c8ca; stroke-width: 1; stroke-dasharray: 3 3; fill: none; }
+    .on-fill { fill: rgba(193,79,44,0.15); stroke: none; }
+    .pulse-on { fill: rgba(193,79,44,0.25); stroke: #c14f2c; stroke-width: 1; }
+    .pulse-off { fill: #fffdf8; stroke: #c4c8ca; stroke-width: 1; }
+    .ref-label { font-size: 14px; fill: #c14f2c; font-weight: 600; }
+    .teal-label { font-size: 14px; fill: #4e7a76; }
+    .divider { stroke: #c4c8ca; stroke-width: 1; }
+  </style>
+  <defs>
+    <marker id="dim-start" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+      <path d="M8,0 L4,4 L8,8" fill="none" stroke="#5b6468" stroke-width="1.2" />
+    </marker>
+    <marker id="dim-end" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+      <path d="M0,0 L4,4 L0,8" fill="none" stroke="#5b6468" stroke-width="1.2" />
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect class="bg" x="0" y="0" width="800" height="420" rx="24" ry="24" />
+
+  <!-- Heading -->
+  <text class="txt head" x="30" y="44">Modulation index and duty cycle</text>
+
+  <!-- ===================== LEFT PANEL: Carrier + reference ===================== -->
+
+  <!-- Zero-line (dashed) -->
+  <line class="axis-line" x1="80" y1="210" x2="420" y2="210" />
+
+  <!-- Y-axis labels -->
+  <text class="label" x="64" y="95" text-anchor="end">+1</text>
+  <text class="label" x="64" y="215" text-anchor="end">0</text>
+  <text class="label" x="64" y="335" text-anchor="end">−1</text>
+
+  <!-- Carrier range dimension arrow (far left) -->
+  <line class="dim-line" x1="38" y1="93" x2="38" y2="327" />
+  <text class="dim-text" x="24" y="210" text-anchor="middle" transform="rotate(-90 24 210)">carrier range: 2</text>
+
+  <!-- ma dimension arrow -->
+  <line class="dim-line" x1="56" y1="210" x2="56" y2="117" />
+  <text class="dim-text" x="46" y="166" text-anchor="middle" transform="rotate(-90 46 166)">ma</text>
+
+  <!-- ON-time shaded regions (ref > carrier) -->
+  <!-- Left region: x=80..233, carrier below reference -->
+  <polygon class="on-fill" points="80,330 80,114 233,114" />
+  <!-- Right region: x=267..420, carrier below reference -->
+  <polygon class="on-fill" points="267,114 420,114 420,330" />
+
+  <!-- Carrier triangle: valley(-1) -> peak(+1) -> valley(-1) -->
+  <polyline class="carrier" points="80,330 250,90 420,330" />
+
+  <!-- Reference line at ma=0.8 (y=114) -->
+  <line class="ref-line" x1="80" y1="114" x2="420" y2="114" />
+  <text class="ref-label" x="430" y="110">v*u = ma</text>
+  <text class="ref-label" x="430" y="128">= 0.8</text>
+
+  <!-- Crossing tick marks -->
+  <line stroke="#c14f2c" stroke-width="1.5" x1="233" y1="108" x2="233" y2="120" />
+  <line stroke="#c14f2c" stroke-width="1.5" x1="267" y1="108" x2="267" y2="120" />
+
+  <!-- Carrier label -->
+  <text class="teal-label" x="300" y="82">carrier</text>
+
+  <!-- ===================== Pulse bar (y=354..374) ===================== -->
+
+  <!-- ON region left -->
+  <rect class="pulse-on" x="80" y="354" width="153" height="20" rx="3" ry="3" />
+  <text class="label" x="156" y="368" text-anchor="middle" fill="#c14f2c">ON</text>
+
+  <!-- OFF region center -->
+  <rect class="pulse-off" x="233" y="354" width="34" height="20" rx="3" ry="3" />
+
+  <!-- ON region right -->
+  <rect class="pulse-on" x="267" y="354" width="153" height="20" rx="3" ry="3" />
+  <text class="label" x="344" y="368" text-anchor="middle" fill="#c14f2c">ON</text>
+
+  <!-- Pulse label -->
+  <text class="info" x="80" y="402">du = (1 + v*u) / 2 = 0.9</text>
+
+  <!-- Connecting dashed lines from crossings to pulse bar -->
+  <line stroke="#c4c8ca" stroke-width="1" stroke-dasharray="3 3" x1="233" y1="120" x2="233" y2="354" />
+  <line stroke="#c4c8ca" stroke-width="1" stroke-dasharray="3 3" x1="267" y1="120" x2="267" y2="354" />
+
+  <!-- ===================== RIGHT PANEL: Linear limits ===================== -->
+
+  <!-- Vertical divider -->
+  <line class="divider" x1="450" y1="70" x2="450" y2="390" />
+
+  <!-- Sub-heading -->
+  <text class="txt sub" x="472" y="100">Linear limits:</text>
+
+  <!-- Limit entries -->
+  <text class="info" x="472" y="132">Sinusoidal:</text>
+  <text class="info-em" x="572" y="132">ma ≤ 1.0</text>
+
+  <text class="info" x="472" y="162">Zero-seq injection:</text>
+  <text class="info-em" x="472" y="182">ma ≤ 2/√3 ≈ 1.155</text>
+
+  <text class="info" x="472" y="212">Six-step equivalent:</text>
+  <text class="info-em" x="472" y="232">ma = 4/π ≈ 1.273</text>
+
+  <!-- Separator -->
+  <line stroke="#e0ddd8" stroke-width="1" x1="472" y1="252" x2="760" y2="252" />
+
+  <!-- Voltage mapping note -->
+  <text class="txt sub" x="472" y="280">Physical voltage:</text>
+
+  <text class="info" x="472" y="310">Vph,peak = ma · Vdc / 2</text>
+
+  <text class="info" x="472" y="344">At ma = 0.8, Vdc = 300 V:</text>
+  <text class="info-em" x="472" y="370">Vph,peak = 120 V</text>
+</svg>

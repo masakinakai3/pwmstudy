@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="420" viewBox="0 0 1000 420" role="img" aria-labelledby="title desc">
+  <title id="title">SVPWM symmetric switching sequence</title>
+  <desc id="desc">Timing diagram showing the symmetric 7-segment SVPWM switching sequence for sector 1, with gate signals Su, Sv, Sw and vector labels V0-V7.</desc>
+  <style>
+    .bg { fill: #fbf8f2; }
+    .txt { font-family: Arial, Helvetica, sans-serif; fill: #182126; }
+    .head { font-size: 24px; font-weight: 700; }
+    .row-label { font-size: 18px; font-weight: 700; font-family: Arial, Helvetica, sans-serif; }
+    .level-label { font-size: 13px; fill: #5b6468; font-family: Arial, Helvetica, sans-serif; }
+    .vec-label { font-size: 18px; font-weight: 600; font-family: Arial, Helvetica, sans-serif; }
+    .time-label { font-size: 13px; fill: #5b6468; font-family: Arial, Helvetica, sans-serif; }
+    .bracket-label { font-size: 16px; font-weight: 600; fill: #182126; font-family: Arial, Helvetica, sans-serif; }
+    .sym-label { font-size: 13px; fill: #182126; font-family: Arial, Helvetica, sans-serif; }
+    .su-line { stroke: #c14f2c; stroke-width: 3; fill: none; }
+    .sv-line { stroke: #4e7a76; stroke-width: 3; fill: none; }
+    .sw-line { stroke: #7b6ea0; stroke-width: 3; fill: none; }
+    .boundary { stroke: #b8b5ad; stroke-width: 1.5; stroke-dasharray: 5 5; fill: none; }
+    .sym-line { stroke: #182126; stroke-width: 1.5; stroke-dasharray: 8 4 3 4; fill: none; }
+    .bracket { stroke: #182126; stroke-width: 1.5; fill: none; }
+    .shade-zero { fill: rgba(216,213,205,0.3); }
+    .shade-v1 { fill: rgba(78,122,118,0.08); }
+    .shade-v2 { fill: rgba(193,79,44,0.08); }
+  </style>
+
+  <!-- Background -->
+  <rect class="bg" x="0" y="0" width="1000" height="420" rx="24" ry="24" />
+
+  <!-- Heading -->
+  <text class="txt head" x="30" y="42">Symmetric switching sequence (sector 1)</text>
+
+  <!-- ===================== Segment background shading ===================== -->
+  <!-- V0 segment 1: x=140..220 -->
+  <rect class="shade-zero" x="140" y="65" width="80" height="310" />
+  <!-- V1 segment 2: x=220..360 -->
+  <rect class="shade-v1" x="220" y="65" width="140" height="310" />
+  <!-- V2 segment 3: x=360..460 -->
+  <rect class="shade-v2" x="360" y="65" width="100" height="310" />
+  <!-- V7 segment 4: x=460..620 -->
+  <rect class="shade-zero" x="460" y="65" width="160" height="310" />
+  <!-- V2 segment 5: x=620..720 -->
+  <rect class="shade-v2" x="620" y="65" width="100" height="310" />
+  <!-- V1 segment 6: x=720..860 -->
+  <rect class="shade-v1" x="720" y="65" width="140" height="310" />
+  <!-- V0 segment 7: x=860..940 -->
+  <rect class="shade-zero" x="860" y="65" width="80" height="310" />
+
+  <!-- ===================== Segment boundary lines ===================== -->
+  <line class="boundary" x1="140" y1="65" x2="140" y2="375" />
+  <line class="boundary" x1="220" y1="65" x2="220" y2="375" />
+  <line class="boundary" x1="360" y1="65" x2="360" y2="375" />
+  <line class="boundary" x1="460" y1="65" x2="460" y2="375" />
+  <line class="boundary" x1="620" y1="65" x2="620" y2="375" />
+  <line class="boundary" x1="720" y1="65" x2="720" y2="375" />
+  <line class="boundary" x1="860" y1="65" x2="860" y2="375" />
+  <line class="boundary" x1="940" y1="65" x2="940" y2="375" />
+
+  <!-- ===================== Center symmetry line ===================== -->
+  <line class="sym-line" x1="540" y1="65" x2="540" y2="390" />
+  <text class="sym-label" x="548" y="400">Ts/2</text>
+
+  <!-- ===================== Row labels (left side) ===================== -->
+  <!-- Su row -->
+  <text class="row-label" x="50" y="112" fill="#c14f2c" text-anchor="middle">Su</text>
+  <text class="level-label" x="125" y="88" text-anchor="end">1</text>
+  <text class="level-label" x="125" y="138" text-anchor="end">0</text>
+
+  <!-- Sv row -->
+  <text class="row-label" x="50" y="192" fill="#4e7a76" text-anchor="middle">Sv</text>
+  <text class="level-label" x="125" y="168" text-anchor="end">1</text>
+  <text class="level-label" x="125" y="218" text-anchor="end">0</text>
+
+  <!-- Sw row -->
+  <text class="row-label" x="50" y="272" fill="#7b6ea0" text-anchor="middle">Sw</text>
+  <text class="level-label" x="125" y="248" text-anchor="end">1</text>
+  <text class="level-label" x="125" y="298" text-anchor="end">0</text>
+
+  <!-- ===================== Gate signal waveforms ===================== -->
+  <!-- Su: 0,1,1,1,1,1,0 -->
+  <!-- Low(140-220), High(220-860), Low(860-940) -->
+  <path class="su-line" d="M140,130 H220 V80 H860 V130 H940" />
+
+  <!-- Sv: 0,0,1,1,1,0,0 -->
+  <!-- Low(140-360), High(360-720), Low(720-940) -->
+  <path class="sv-line" d="M140,210 H360 V160 H720 V210 H940" />
+
+  <!-- Sw: 0,0,0,1,0,0,0 -->
+  <!-- Low(140-460), High(460-620), Low(620-940) -->
+  <path class="sw-line" d="M140,290 H460 V240 H620 V290 H940" />
+
+  <!-- ===================== Vector labels (row 4, y=340) ===================== -->
+  <text class="vec-label" x="180" y="340" text-anchor="middle" fill="#5b6468">V0</text>
+  <text class="vec-label" x="290" y="340" text-anchor="middle" fill="#4e7a76">V1</text>
+  <text class="vec-label" x="410" y="340" text-anchor="middle" fill="#c14f2c">V2</text>
+  <text class="vec-label" x="540" y="340" text-anchor="middle" fill="#5b6468">V7</text>
+  <text class="vec-label" x="670" y="340" text-anchor="middle" fill="#c14f2c">V2</text>
+  <text class="vec-label" x="790" y="340" text-anchor="middle" fill="#4e7a76">V1</text>
+  <text class="vec-label" x="900" y="340" text-anchor="middle" fill="#5b6468">V0</text>
+
+  <!-- ===================== Time duration labels (y=362) ===================== -->
+  <text class="time-label" x="180" y="362" text-anchor="middle">T0/4</text>
+  <text class="time-label" x="290" y="362" text-anchor="middle">T1/2</text>
+  <text class="time-label" x="410" y="362" text-anchor="middle">T2/2</text>
+  <text class="time-label" x="540" y="362" text-anchor="middle">T0/2</text>
+  <text class="time-label" x="670" y="362" text-anchor="middle">T2/2</text>
+  <text class="time-label" x="790" y="362" text-anchor="middle">T1/2</text>
+  <text class="time-label" x="900" y="362" text-anchor="middle">T0/4</text>
+
+  <!-- ===================== Bottom bracket (Ts) ===================== -->
+  <!-- Left tick -->
+  <line class="bracket" x1="140" y1="400" x2="140" y2="410" />
+  <!-- Horizontal bar -->
+  <line class="bracket" x1="140" y1="405" x2="540" y2="405" />
+  <line class="bracket" x1="540" y1="405" x2="940" y2="405" />
+  <!-- Right tick -->
+  <line class="bracket" x1="940" y1="400" x2="940" y2="410" />
+  <!-- Label -->
+  <text class="bracket-label" x="540" y="418" text-anchor="middle">Ts</text>
+</svg>

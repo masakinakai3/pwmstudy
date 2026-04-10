@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
+  <title id="title">Transition from linear PWM to one-pulse-like waveform and six-step</title>
+  <desc id="desc">Three stacked examples showing linear PWM, one-pulse-like modulation, and six-step switching as overmodulation increases.</desc>
+  <style>
+    .bg { fill: #fbf8f2; }
+    .axis { stroke: #182126; stroke-width: 2.5; fill: none; }
+    .env { stroke: #4e7a76; stroke-width: 2.5; fill: none; }
+    .step { stroke: #c14f2c; stroke-width: 4; fill: none; }
+    .guide { stroke: #d8d5cd; stroke-width: 1; fill: none; }
+    .txt { font-family: Arial, Helvetica, sans-serif; fill: #182126; font-size: 20px; }
+    .small { font-size: 16px; fill: #5b6468; }
+    .head { font-size: 28px; font-weight: 700; }
+    .mark { stroke: #182126; stroke-width: 2; marker-end: url(#arrow); fill: none; }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#182126" />
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1200" height="620" rx="24" ry="24" />
+  <text class="txt head" x="44" y="46">Overmodulation progression</text>
+
+  <line class="guide" x1="120" y1="150" x2="1120" y2="150" />
+  <line class="guide" x1="120" y1="320" x2="1120" y2="320" />
+  <line class="guide" x1="120" y1="490" x2="1120" y2="490" />
+
+  <path class="axis" d="M120 150 H1120 M120 320 H1120 M120 490 H1120" />
+  <text class="txt" x="40" y="155">linear PWM</text>
+  <text class="txt" x="18" y="325">one-pulse like</text>
+  <text class="txt" x="54" y="495">six-step</text>
+
+  <path class="env" d="M120 150 C180 112, 240 84, 320 82 C400 80, 480 110, 560 150 C640 190, 720 220, 800 218 C880 216, 960 186, 1040 138 C1080 114, 1100 102, 1120 96" />
+  <path class="env" d="M120 150 C180 188, 240 216, 320 218 C400 220, 480 190, 560 150 C640 110, 720 80, 800 82 C880 84, 960 114, 1040 162 C1080 186, 1100 198, 1120 204" />
+  <path class="step" d="M140 150 h18 v-24 h26 v24 h30 v-36 h26 v36 h32 v-50 h24 v50 h32 v-56 h24 v56 h32 v-44 h24 v44 h32 v-28 h24 v28 h32 v-14 h24 v14 h26" />
+
+  <path class="step" d="M150 320 h90 v-96 h300 v96 h120 v96 h300 v-96 h120" />
+  <path class="mark" d="M240 210 V260" />
+  <path class="mark" d="M540 210 V260" />
+  <text class="txt small" x="230" y="204">alpha</text>
+  <text class="txt small" x="532" y="204">alpha</text>
+  <path class="mark" d="M240 274 H540" />
+  <text class="txt small" x="374" y="268">beta</text>
+
+  <path class="step" d="M150 490 h160 v-110 h300 v220 h300 v-220 h210" />
+  <text class="txt small" x="682" y="436">half-cycle conduction</text>
+  <text class="txt small" x="174" y="116">many narrow pulses, low-order harmonics are lower</text>
+  <text class="txt small" x="178" y="286">single broad pulse per half cycle</text>
+  <text class="txt small" x="176" y="456">square-wave limit of overmodulation</text>
+</svg>

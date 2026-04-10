@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="260" viewBox="0 0 1200 260" role="img" aria-labelledby="title desc">
+  <title id="title">PWM signal chain</title>
+  <desc id="desc">Reference generation, carrier comparison, switching, inverter voltage, RL load, and FFT analysis flow.</desc>
+  <style>
+    .bg { fill: #fbf8f2; }
+    .box { fill: #fffdf8; stroke: #182126; stroke-width: 2; rx: 18; ry: 18; }
+    .accent { fill: #f6ece0; stroke: #c14f2c; stroke-width: 2; }
+    .teal { fill: #ecf5f3; stroke: #4e7a76; stroke-width: 2; }
+    .line { stroke: #182126; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+    .txt { font-family: Arial, Helvetica, sans-serif; fill: #182126; font-size: 20px; }
+    .small { font-size: 16px; fill: #5b6468; }
+    .head { font-size: 24px; font-weight: 700; }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#182126" />
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1200" height="260" rx="24" ry="24" />
+
+  <text class="txt head" x="50" y="48">Signal Processing Chain</text>
+
+  <rect class="box accent" x="40" y="80" width="170" height="110" rx="18" ry="18" />
+  <text class="txt" x="70" y="115">UI inputs</text>
+  <text class="txt small" x="64" y="145">Vdc, VLL,rms, f</text>
+  <text class="txt small" x="64" y="167">fc, R, L, td, Von</text>
+
+  <rect class="box teal" x="250" y="80" width="170" height="110" rx="18" ry="18" />
+  <text class="txt" x="275" y="115">Reference</text>
+  <text class="txt small" x="280" y="145">sin / 3rd harm</text>
+  <text class="txt small" x="278" y="167">min-max / DPWM</text>
+
+  <rect class="box" x="460" y="80" width="170" height="110" rx="18" ry="18" />
+  <text class="txt" x="498" y="115">Carrier</text>
+  <text class="txt small" x="486" y="145">natural sampling</text>
+  <text class="txt small" x="508" y="167">compare PWM</text>
+
+  <rect class="box accent" x="670" y="80" width="170" height="110" rx="18" ry="18" />
+  <text class="txt" x="704" y="115">Switching</text>
+  <text class="txt small" x="716" y="145">Su, Sv, Sw</text>
+  <text class="txt small" x="706" y="167">deadtime model</text>
+
+  <rect class="box teal" x="880" y="80" width="170" height="110" rx="18" ry="18" />
+  <text class="txt" x="908" y="115">Power stage</text>
+  <text class="txt small" x="917" y="145">vuv, vuN, i_u</text>
+  <text class="txt small" x="914" y="167">RL load solver</text>
+
+  <rect class="box" x="1080" y="80" width="90" height="110" rx="18" ry="18" />
+  <text class="txt" x="1105" y="120">FFT</text>
+  <text class="txt small" x="1096" y="146">THD</text>
+  <text class="txt small" x="1096" y="168">PF1</text>
+
+  <path class="line" d="M210 135 H240" />
+  <path class="line" d="M420 135 H450" />
+  <path class="line" d="M630 135 H660" />
+  <path class="line" d="M840 135 H870" />
+  <path class="line" d="M1050 135 H1070" />
+
+  <text class="txt small" x="485" y="220">reference generation -> carrier compare -> switching -> inverter voltage -> load current -> FFT</text>
+</svg>
