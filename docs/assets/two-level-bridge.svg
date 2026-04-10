@@ -60,10 +60,10 @@
   <line class="wire" x1="280" y1="260" x2="280" y2="300" />
   <!-- lower switch -->
   <rect class="dev" x="245" y="300" width="70" height="60" rx="8" ry="8" />
-  <!-- lower diode (pointing down) -->
+      <!-- lower diode (pointing up) -->
   <line class="thin" x1="322" y1="305" x2="322" y2="355" />
-  <path class="diode" d="M316,322 L328,322 L322,342 Z" />
-  <line class="dbar" x1="316" y1="342" x2="328" y2="342" />
+      <path class="diode" d="M316,342 L328,342 L322,322 Z" />
+      <line class="dbar" x1="316" y1="322" x2="328" y2="322" />
   <!-- bottom wire -->
   <line class="wire" x1="280" y1="360" x2="280" y2="430" />
 
@@ -80,8 +80,8 @@
   <line class="wire" x1="440" y1="260" x2="440" y2="300" />
   <rect class="dev" x="405" y="300" width="70" height="60" rx="8" ry="8" />
   <line class="thin" x1="482" y1="305" x2="482" y2="355" />
-  <path class="diode" d="M476,322 L488,322 L482,342 Z" />
-  <line class="dbar" x1="476" y1="342" x2="488" y2="342" />
+      <path class="diode" d="M476,342 L488,342 L482,322 Z" />
+      <line class="dbar" x1="476" y1="322" x2="488" y2="322" />
   <line class="wire" x1="440" y1="360" x2="440" y2="430" />
 
   <!-- ==================== Leg W (x=600) ==================== -->
@@ -97,8 +97,8 @@
   <line class="wire" x1="600" y1="260" x2="600" y2="300" />
   <rect class="dev" x="565" y="300" width="70" height="60" rx="8" ry="8" />
   <line class="thin" x1="642" y1="305" x2="642" y2="355" />
-  <path class="diode" d="M636,322 L648,322 L642,342 Z" />
-  <line class="dbar" x1="636" y1="342" x2="648" y2="342" />
+      <path class="diode" d="M636,342 L648,342 L642,322 Z" />
+      <line class="dbar" x1="636" y1="322" x2="648" y2="322" />
   <line class="wire" x1="600" y1="360" x2="600" y2="430" />
 
   <!-- ==================== Y-connected RL load ==================== -->

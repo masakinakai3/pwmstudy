@@ -3001,8 +3001,53 @@ async function exportDashboardPng() {
 let sweepData = null;
 let sweepAnimTimer = null;
 
+function hasSweepResults() {
+  return Boolean(sweepData && sweepData.points && sweepData.points.length > 0);
+}
+
+function setSweepRunUiState(state, detail = "") {
+  const runButton = document.getElementById("sweepRunButton");
+  const animateButton = document.getElementById("sweepAnimateButton");
+  const statusLabel = document.getElementById("sweepRunStatus");
+  if (!runButton || !animateButton || !statusLabel) {
+    return;
+  }
+
+  if (state === "running") {
+    runButton.disabled = true;
+    runButton.textContent = "実行中...";
+    animateButton.disabled = true;
+    statusLabel.dataset.state = "running";
+    statusLabel.textContent = detail || "m_a スイープを実行しています...";
+    return;
+  }
+
+  runButton.disabled = false;
+  runButton.textContent = "スイープ実行";
+  animateButton.disabled = !hasSweepResults();
+
+  if (state === "success") {
+    statusLabel.dataset.state = "success";
+    statusLabel.textContent = detail || "スイープ完了";
+    return;
+  }
+
+  if (state === "error") {
+    statusLabel.dataset.state = "error";
+    statusLabel.textContent = detail || "スイープ失敗";
+    return;
+  }
+
+  statusLabel.dataset.state = "idle";
+  statusLabel.textContent = detail || "待機中";
+}
+
 async function runSweep() {
-  if (!currentResponse) return;
+  if (!currentResponse) {
+    setSweepRunUiState("error", "先にシミュレーション結果を作成してください。");
+    setStatus("入力確認", "先にシミュレーションを実行して結果を作成してください。", true);
+    return;
+  }
   const params = currentResponse.params;
   const payload = {
     V_dc: params.V_dc,
@@ -3018,6 +3063,8 @@ async function runSweep() {
     m_a_min: 0.2,
     m_a_max: 1.5,
   };
+  stopSweepAnimation();
+  setSweepRunUiState("running", "m_a スイープを実行しています...");
   setStatus("スイープ中", "m_a スイープを実行しています...");
   try {
     const resp = await fetch("/sweep", {
@@ -3031,10 +3078,11 @@ async function runSweep() {
     }
     sweepData = await resp.json();
     renderSweepPlots(sweepData);
-    document.getElementById("sweepAnimateButton").disabled = false;
+    setSweepRunUiState("success", `${sweepData.points.length}点の m_a スイープが完了しました。`);
     setStatus("スイープ完了", `${sweepData.points.length}点の m_a スイープ結果を描画しました。`);
   } catch (err) {
     console.error(err);
+    setSweepRunUiState("error", "スイープに失敗しました。条件または API 応答を確認してください。");
     setStatus("スイープ失敗", "m_a スイープに失敗しました。", true);
   }
 }
@@ -3248,6 +3296,7 @@ function scheduleSimulation() {
 window.addEventListener("DOMContentLoaded", async () => {
   loadScenarioProgressStore();
   initializeControls();
+  setSweepRunUiState("idle");
   applyStateFromUrl();
   document.getElementById("section1AnimSpeed").addEventListener("change", () => {
     if (!svpwmAnimationPaused) {

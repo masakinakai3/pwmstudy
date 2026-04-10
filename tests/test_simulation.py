@@ -1232,6 +1232,15 @@ class TestEducationContentRegression:
             assert asset in text
             assert (root / "docs" / asset.replace("assets/", "assets/")).exists()
 
+    def test_two_level_bridge_lower_leg_diodes_point_toward_midpoint(self) -> None:
+        """図3の下レグ還流ダイオードが相中点向きで描かれている."""
+        svg = self._read_repo_text("docs/assets/two-level-bridge.svg")
+
+        assert 'M316,342 L328,342 L322,322 Z' in svg
+        assert 'M476,342 L488,342 L482,322 Z' in svg
+        assert 'M636,342 L648,342 L642,322 Z' in svg
+        assert 'x1="316" y1="322" x2="328" y2="322"' in svg
+
     def test_webui_metric_labels_are_unit_explicit(self) -> None:
         """Web UI の V1/I1 ラベルが線間/相と peak を明示する."""
         text = self._read_repo_text("webui/app.js")
@@ -1281,6 +1290,11 @@ class TestWebUiRegression:
         root = Path(__file__).resolve().parents[1]
         return (root / "webui" / "app.js").read_text(encoding="utf-8")
 
+    @staticmethod
+    def _read_index_html() -> str:
+        root = Path(__file__).resolve().parents[1]
+        return (root / "webui" / "index.html").read_text(encoding="utf-8")
+
     def test_webui_app_js_passes_node_syntax_check(self) -> None:
         """app.js が Node.js の構文検査を通過する."""
         node_exe = shutil.which("node")
@@ -1316,6 +1330,16 @@ class TestWebUiRegression:
             assert token not in render_plots_block, (
                 f"renderPlots に進捗パネル断片が混入している: {token}"
             )
+
+    def test_sweep_button_exposes_running_state_and_missing_result_feedback(self) -> None:
+        """スイープ実行ボタンが実行中表示と無反応防止メッセージを持つ."""
+        app_js = self._read_app_js()
+        index_html = self._read_index_html()
+
+        assert 'runButton.textContent = "実行中..."' in app_js
+        assert 'setSweepRunUiState("running", "m_a スイープを実行しています...")' in app_js
+        assert 'setSweepRunUiState("error", "先にシミュレーション結果を作成してください。")' in app_js
+        assert 'id="sweepRunStatus"' in index_html
 
 
 class TestWebApi:
