@@ -2905,6 +2905,9 @@ async function exportDashboardPng() {
     const images = [];
     for (const plotId of plotIds) {
       const plotElement = document.getElementById(plotId);
+      if (!plotElement || !plotElement.data || plotElement.data.length === 0) {
+        continue;
+      }
       const dataUrl = await Plotly.toImage(plotElement, {
         format: "png",
         width: 1200,
@@ -2914,9 +2917,19 @@ async function exportDashboardPng() {
       images.push(await loadImage(dataUrl));
     }
 
+    const plotW = 700;
+    const plotH = 420;
+    const cols = 2;
+    const padX = 60;
+    const gapX = 820 - 60;
+    const headerH = 190;
+    const rowGap = 720;
+    const nRows = Math.ceil(images.length / cols);
+    const canvasH = headerH + nRows * rowGap + 300;
+
     const canvas = document.createElement("canvas");
     canvas.width = 1600;
-  canvas.height = 2420;
+    canvas.height = canvasH;
     const context = canvas.getContext("2d");
     context.fillStyle = "#f4efe6";
     context.fillRect(0, 0, canvas.width, canvas.height);
@@ -2924,7 +2937,7 @@ async function exportDashboardPng() {
     context.fillStyle = "#182126";
     context.font = "bold 42px Georgia";
     context.fillText("Three-Phase PWM Inverter Report", 60, 70);
-    context.font = "24px Aptos";
+    context.font = "24px 'Aptos', 'Segoe UI', sans-serif";
     context.fillText(`timestamp: ${new Date().toLocaleString()}`, 60, 112);
     context.fillText(
       `Mode=${currentResponse.meta.modulation_summary_label}, Overmod=${currentResponse.meta.overmod_view ? "on" : "off"}, FFT=${currentResponse.meta.fft_target}`,
@@ -2932,9 +2945,9 @@ async function exportDashboardPng() {
       146,
     );
 
-    context.font = "bold 26px Aptos";
+    context.font = "bold 26px 'Aptos', 'Segoe UI', sans-serif";
     context.fillText("Theory Snapshot", 980, 70);
-    context.font = "22px Aptos";
+    context.font = "22px 'Aptos', 'Segoe UI', sans-serif";
     const theoryRows = [
       `m_a = ${formatNumber(currentResponse.metrics.m_a, 3)}`,
       `m_f = ${formatNumber(currentResponse.metrics.m_f, 1)}`,
@@ -2945,30 +2958,26 @@ async function exportDashboardPng() {
     ];
     theoryRows.forEach((row, rowIndex) => context.fillText(row, 980, 116 + rowIndex * 34));
 
-    const slots = [
-      [60, 190],
-      [820, 190],
-      [60, 910],
-      [820, 910],
-      [60, 1630],
-      [820, 1630],
-    ];
     images.forEach((image, imageIndex) => {
-      const [x, y] = slots[imageIndex];
-      context.drawImage(image, x, y, 700, 420);
+      const col = imageIndex % cols;
+      const row = Math.floor(imageIndex / cols);
+      const x = col === 0 ? padX : gapX;
+      const y = headerH + row * rowGap;
+      context.drawImage(image, x, y, plotW, plotH);
     });
 
     if (baselineResponse) {
-      context.font = "bold 24px Aptos";
-      context.fillText("Baseline Compare", 60, 2140);
-      context.font = "22px Aptos";
+      const baseY = headerH + nRows * rowGap + 20;
+      context.font = "bold 24px 'Aptos', 'Segoe UI', sans-serif";
+      context.fillText("Baseline Compare", 60, baseY);
+      context.font = "22px 'Aptos', 'Segoe UI', sans-serif";
       const compareRows = [
         `ΔV1 = ${formatNumber(currentResponse.metrics.V1_pk - baselineResponse.metrics.V1_pk, 1)} V`,
         `ΔI1 = ${formatNumber(currentResponse.metrics.I1_pk - baselineResponse.metrics.I1_pk, 2)} A`,
         `ΔTHD_V = ${formatNumber(currentResponse.metrics.THD_V - baselineResponse.metrics.THD_V, 1)} %`,
         `ΔTHD_I = ${formatNumber(currentResponse.metrics.THD_I - baselineResponse.metrics.THD_I, 1)} %`,
       ];
-      compareRows.forEach((row, rowIndex) => context.fillText(row, 60, 2190 + rowIndex * 34));
+      compareRows.forEach((row, rowIndex) => context.fillText(row, 60, baseY + 50 + rowIndex * 34));
     }
 
     canvas.toBlob((blob) => {
@@ -3139,8 +3148,8 @@ function startSweepAnimation() {
     const V_dc = sweepData.V_dc;
     const V_ll_rms = p.m_a_target * V_dc * Math.sqrt(3) / (2 * Math.sqrt(2));
     // V_ll スライダーの更新（display kHz 単位ではないので direct set）
-    const vllSlider = document.querySelector('input[type="range"][data-param="V_ll_rms"]');
-    const vllNumber = document.querySelector('input[type="number"][data-param="V_ll_rms"]');
+    const vllSlider = document.querySelector('input[type="range"][data-key="V_ll_rms"]');
+    const vllNumber = document.querySelector('input[type="number"][data-key="V_ll_rms"]');
     if (vllSlider) vllSlider.value = V_ll_rms.toFixed(1);
     if (vllNumber) vllNumber.value = V_ll_rms.toFixed(1);
     idx++;

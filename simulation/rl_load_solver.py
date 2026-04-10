@@ -32,7 +32,7 @@ def _calc_exact_update_coefficients(
     x = R * dt / L
     alpha = np.exp(-x)
 
-    if x == 0.0:
+    if np.isclose(x, 0.0, atol=1e-15):
         beta = dt / L
     else:
         beta = (dt / L) * (-np.expm1(-x) / x)

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from application.modulation_config import normalize_modulation_mode
 
@@ -80,3 +80,11 @@ class SweepRequest(BaseModel):
     n_points: int = Field(ge=5, le=50, default=25)
     m_a_min: float = Field(ge=0.1, le=2.0, default=0.2)
     m_a_max: float = Field(ge=0.1, le=2.0, default=1.5)
+
+    @model_validator(mode="after")
+    def _check_m_a_range(self) -> SweepRequest:
+        if self.m_a_min >= self.m_a_max:
+            raise ValueError(
+                f"m_a_min ({self.m_a_min}) は m_a_max ({self.m_a_max}) より小さくなければなりません"
+            )
+        return self
