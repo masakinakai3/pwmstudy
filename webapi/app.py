@@ -53,14 +53,7 @@ def simulate(request: SimulationRequest) -> dict[str, object]:
         results = run_simulation(request.to_simulation_params())
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"シミュレーション実行エラー: {type(exc).__name__}: {exc}") from exc
-    response = build_web_response(results)
-    # build_web_response は内部表現 ("voltage"/"current") で fft.target を書くが、
-    # API 公開表現は "v_uv"/"i_u" であるため上書きする。
-    # TODO: この変換は build_web_response または to_simulation_params 内で完結させることが望ましい。
-    response["meta"]["fft_target"] = request.fft_target
-    response["fft"]["target"] = request.fft_target
-
-    return response
+    return build_web_response(results)
 
 
 @app.post("/sweep")

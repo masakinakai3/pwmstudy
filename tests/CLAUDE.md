@@ -6,14 +6,14 @@
 - テストは `test_simulation.py` に集約（モジュール単位のクラスで構成）
 
 ```bash
-python -m pytest tests -v           # 全テスト（74件）
+python -m pytest tests -v           # 全テスト
 python -m pytest tests -k "RlLoad"  # 特定クラスのみ
 ```
 
 ## テストクラス構成
 
 | テストクラス | 対象 |
-|---|---|
+| --- | --- |
 | `TestReferenceGenerator` | `reference_generator.py` |
 | `TestCarrierGenerator` | `carrier_generator.py` |
 | `TestPwmComparator` | `pwm_comparator.py` |
@@ -44,13 +44,16 @@ V_ON = 1.0         # [V]
 ## 物理妥当性テスト（必須）
 
 ### 三相対称性
+
 ```python
 assert np.allclose(v_u + v_v + v_w, 0, atol=1e-10)
 assert np.allclose(i_u + i_v + i_w, 0, atol=1e-3)  # 過渡状態を除く
 ```
+
 三次高調波注入では線間参照差の不変性で検証。
 
 ### 値域チェック
+
 ```python
 assert np.all((-1 <= v_ref) & (v_ref <= 1))       # 変調信号
 assert np.all(np.isin(S_u, [0, 1]))                # スイッチング
@@ -58,6 +61,7 @@ assert np.all(np.isin(v_uv / V_dc, [-1, 0, 1]))   # 線間電圧
 ```
 
 ### 定常状態理論値（誤差5%以内）
+
 ```python
 Z = np.sqrt(R**2 + (2 * np.pi * f * L)**2)
 I_theory = V_ph / Z

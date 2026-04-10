@@ -11,7 +11,7 @@ desktop UI は 6 段構成で指令信号・スイッチングパターン・線
 - **8パラメータスライダー + 変調選択**: 三角波比較 / 三角波比較(三倍高調波) / 三角波比較(二相変調) / 空間ベクトル / 空間ベクトル(二相変調) の 5 方式を切替可能。サンプリング方式は Natural 固定
 - **FFT表示切替**: 線間電圧 v_uv と相電流 i_u を切替表示、Hann / Rectangular 窓も選択可能
 - **Web UI**: ブラウザから 8 パラメータ、変調方式、Overmod View、FFT 表示対象を変更可能
-- **FastAPI API**: `/health`, `/scenarios`, `/simulate` を公開し、web UI と外部クライアントの双方から利用可能
+- **FastAPI API**: `/health`, `/scenarios`, `/simulate`, `/sweep` を公開し、web UI と外部クライアントの双方から利用可能
 - **FFT解析 + THD表示**: desktop UI は基本波とキャリア高調波を色分けし、desktop/web の双方で V1_LL,pk（v_uv 基本波ピーク）/ I1_u,pk（i_u 基本波ピーク）/ RMS / THD / 基本波力率を確認可能
 - **変調率モニタ**: $m_a$ 値を常時表示、過変調時にはクランプ警告
 - **理論比較表示**: 相電流の基本波振幅を理論値と FFT 実測値で比較
@@ -101,7 +101,7 @@ python -m pytest tests/ -v
 ├── ui/
 │   └── visualizer.py            # Matplotlib波形表示UI（6段+変調方式選択+FFT切替+理論比較）
 ├── webapi/
-│   ├── app.py                   # FastAPI アプリ（/, /health, /scenarios, /simulate）
+│   ├── app.py                   # FastAPI アプリ（/, /health, /scenarios, /simulate, /sweep）
 │   └── schemas.py               # API 入力スキーマ
 ├── webui/
 │   ├── index.html               # Web UI
@@ -183,7 +183,7 @@ Web UI のベクトル図レンジを次のように切り替えています。
 | 負荷抵抗 | $R$ | 10 | 0.1–100 | Ω |
 | 負荷インダクタンス | $L$ | 10 | 0.1–100 | mH |
 
-> **API の単位**: POST `/simulate` の入力は SI 単位（Hz, s, H）です。UI 表示の kHz, us, mH とは異なるため、API を直接利用する場合は単位変換に注意してください。
+> **API の単位**: POST `/simulate` と `/sweep` の入力は SI 単位（Hz, s, H）です。UI 表示の kHz, us, mH とは異なるため、API を直接利用する場合は単位変換に注意してください。
 
 ## シミュレーション処理フロー
 

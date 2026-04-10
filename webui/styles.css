@@ -352,6 +352,11 @@ select,
   color: #5b487f;
 }
 
+.guide-status.info {
+  background: rgba(24, 33, 38, 0.08);
+  color: var(--muted);
+}
+
 .dashboard-panel {
   display: grid;
   gap: 20px;

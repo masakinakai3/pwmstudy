@@ -5,7 +5,7 @@ SCENARIO_PRESETS = [
     {
         "id": "linear_limit",
         "label": "①線形変調限界",
-        "hint": "最初は①変調信号と③線間電圧だけに注目。V_LL を上げると m_a が上がり、上限でクランプ表示に切り替わる。",
+        "hint": "最初は変調信号と線間電圧だけに注目。V_LL を上げると m_a が上がり、上限でクランプ表示に切り替わる。",
         "focus": "V_LL 指令と m_a、線形上限のつながりを最初に掴む。",
         "learning_objective": "出力指令を上げたときに、どこで線形関係が崩れるかを説明できる。",
         "prerequisites": [
@@ -52,7 +52,7 @@ SCENARIO_PRESETS = [
     {
         "id": "carrier_frequency",
         "label": "②キャリア周波数",
-        "hint": "次は⑥FFTを見る。f_c を上げると高調波ピークが右へ移動し、電流リプルが下がりやすくなる。",
+        "hint": "次は FFT を見る。f_c を上げると高調波ピークが右へ移動し、電流リプルが下がりやすくなる。",
         "focus": "f_c と FFT の見え方（電圧/電流）の関係を掴む。",
         "learning_objective": "m_f を上げると何が改善しやすいかを説明できる。",
         "prerequisites": [
@@ -98,7 +98,7 @@ SCENARIO_PRESETS = [
     {
         "id": "inductance_smoothing",
         "label": "③L平滑効果",
-        "hint": "⑤相電流を主に見る。L を上げるとギザギザが減り、電流が滑らかになる。",
+        "hint": "相電流を主に見る。L を上げるとギザギザが減り、電流が滑らかになる。",
         "focus": "L の変更が電流波形と THD_I にどう効くかを確認する。",
         "learning_objective": "インダクタが高周波成分を抑える役割を説明できる。",
         "prerequisites": [
@@ -230,7 +230,7 @@ SCENARIO_PRESETS = [
     {
         "id": "dpwm_compare",
         "label": "⑥二相変調(DPWM)",
-        "hint": "連続PWMと二相変調を切り替え、②スイッチングパターンでクランプ区間を先に確認する。",
+        "hint": "連続PWMと二相変調を切り替え、スイッチングパターンでクランプ区間を先に確認する。",
         "focus": "クランプ区間と高調波分布の変化を比較する。",
         "learning_objective": "DPWM でスイッチング回数が減る見え方を説明できる。",
         "prerequisites": [
@@ -273,7 +273,7 @@ SCENARIO_PRESETS = [
     {
         "id": "third_harmonic_compare",
         "label": "⑦三倍高調波注入",
-        "hint": "carrier と三倍高調波注入を切り替え、①変調信号の形と V1 の違いを見る。",
+        "hint": "carrier と三倍高調波注入を切り替え、変調信号の形と V1 の違いを見る。",
         "focus": "三倍高調波注入で線形上限が広がることを確認する。",
         "learning_objective": "零相三倍高調波注入の効果を定性的・定量的に説明できる。",
         "prerequisites": [
@@ -316,7 +316,7 @@ SCENARIO_PRESETS = [
     {
         "id": "svpwm_two_phase_compare",
         "label": "⑧SVPWM二相変調比較",
-        "hint": "SVPWM の連続/不連続を比較する。②スイッチングと⑥FFTを行き来して確認する。",
+        "hint": "SVPWM の連続/不連続を比較する。スイッチングと FFT を行き来して確認する。",
         "focus": "space_vector と space_vector_two_phase の差を直接比較する。",
         "learning_objective": "SVPWM 系における連続/不連続変調の違いを整理できる。",
         "prerequisites": [

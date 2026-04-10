@@ -1,11 +1,9 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * セキュリティ注記 (XSS):
- * このファイルの複数箇所では `element.innerHTML = ...` にサーバーレスポンス値を
- * 直接文字列補間している。現在 /scenarios エンドポイントは Python ハードコード値のみを
- * 返すため XSS リスクは実質ゼロだが、将来エンドポイントがユーザー入力や DB 由来の
- * 値を返すようになった場合は XSS が成立する構造である。
- * 変更前に必ず HTMLエスケープ処理（`textContent` への代入か DOMPurify 等）を導入すること。
+ * セキュリティ注記:
+ * 動的値を含む HTML 断片は escapeHtml() を通して文字列をエスケープする。
+ * 将来 /scenarios や診断文言の供給元が変わっても、少なくともこの UI 側では
+ * HTML 挿入によるスクリプト実行を避ける。
  */
 const defaultDisplayValues = {
   V_dc: 300.0,
@@ -443,6 +441,26 @@ function formatSignedNumber(value, digits) {
   }
   const sign = numeric > 0 ? "+" : "";
   return `${sign}${formatNumber(numeric, digits)}`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function buildDetailRowHtml(label, value, rowClass = "", valueClass = "") {
+  const rowClassSuffix = rowClass ? ` ${rowClass}` : "";
+  const valueClassAttr = valueClass ? ` class="${escapeHtml(valueClass)}"` : "";
+  return `
+    <div class="detail-row${rowClassSuffix}">
+      <span>${escapeHtml(label)}</span>
+      <strong${valueClassAttr}>${escapeHtml(value)}</strong>
+    </div>
+  `;
 }
 
 function setStatus(badgeText, message, isError = false) {
@@ -1324,26 +1342,21 @@ function renderTheoryPanel(metrics) {
     ["PF1(FFT)", formatNumber(metrics.pf1_fft, 3)],
     ["phi [deg]", formatNumber(metrics.phi * 180.0 / Math.PI, 1)],
   ];
-  panel.innerHTML = rows.map(([label, value]) => `
-    <div class="detail-row">
-      <span>${label}</span>
-      <strong>${value}</strong>
-    </div>
-  `).join("");
+  panel.innerHTML = rows.map(([label, value]) => buildDetailRowHtml(label, value)).join("");
 }
 
 function renderComparisonPanel() {
   const panel = document.getElementById("comparisonPanel");
   if (!currentResponse) {
-    panel.innerHTML = '<div class="detail-row"><span>比較状態</span><strong>データ待機中</strong></div>';
+    panel.innerHTML = buildDetailRowHtml("比較状態", "データ待機中");
     return;
   }
 
   if (!baselineResponse) {
-    panel.innerHTML = `
-      <div class="detail-row"><span>比較状態</span><strong>ベースライン未設定</strong></div>
-      <div class="detail-row"><span>案内</span><strong>ベースライン設定で差分比較を開始</strong></div>
-    `;
+    panel.innerHTML = [
+      buildDetailRowHtml("比較状態", "ベースライン未設定"),
+      buildDetailRowHtml("案内", "ベースライン設定で差分比較を開始"),
+    ].join("");
     return;
   }
 
@@ -1385,12 +1398,9 @@ function renderComparisonPanel() {
     },
   ];
 
-  panel.innerHTML = comparisonRows.map((row) => `
-    <div class="detail-row delta-${row.tone}">
-      <span>${row.label}</span>
-      <strong class="delta-${row.tone}">${row.value}</strong>
-    </div>
-  `).join("");
+  panel.innerHTML = comparisonRows
+    .map((row) => buildDetailRowHtml(row.label, row.value, `delta-${row.tone}`, `delta-${row.tone}`))
+    .join("");
 }
 
 function renderLearningInsightPanel(response) {
@@ -1399,12 +1409,13 @@ function renderLearningInsightPanel(response) {
     return;
   }
   if (!response || !response.metrics) {
-    panel.innerHTML = '<div class="detail-row"><span>解説</span><strong>データ待機中</strong></div>';
+    panel.innerHTML = buildDetailRowHtml("解説", "データ待機中");
     return;
   }
 
   const metrics = response.metrics;
   const rows = [];
+  const phiDeg = Number.isFinite(metrics.phi) ? metrics.phi * 180.0 / Math.PI : 0.0;
   const modulationMode = response.meta?.modulation_mode;
   const isDpwmMode = modulationMode === "carrier_two_phase" || modulationMode === "space_vector_two_phase";
 
@@ -1423,7 +1434,7 @@ function renderLearningInsightPanel(response) {
   if (metrics.pf1_fft < 0.95) {
     rows.push({
       label: "力率低下",
-      value: `PF1=${formatNumber(metrics.pf1_fft, 3)}、phi=${formatNumber(metrics.phi_deg, 1)}deg。L/R が大きく、電流遅れが強い状態です。`,
+      value: `PF1=${formatNumber(metrics.pf1_fft, 3)}、phi=${formatNumber(phiDeg, 1)}deg。L/R が大きく、電流遅れが強い状態です。`,
     });
   } else {
     rows.push({
@@ -1456,12 +1467,7 @@ function renderLearningInsightPanel(response) {
       : "連続変調系です。Section 2 で各相が継続的に切り替わるため、電圧利用率と高調波分布を比較しやすいです。",
   });
 
-  panel.innerHTML = rows.map((row) => `
-    <div class="detail-row">
-      <span>${row.label}</span>
-      <strong>${row.value}</strong>
-    </div>
-  `).join("");
+  panel.innerHTML = rows.map((row) => buildDetailRowHtml(row.label, row.value)).join("");
 }
 
 function renderOperatingCheckPanel(response) {
@@ -1470,7 +1476,7 @@ function renderOperatingCheckPanel(response) {
     return;
   }
   if (!response || !response.diagnostics) {
-    panel.innerHTML = '<div class="detail-row"><span>実務チェック</span><strong>データ待機中</strong></div>';
+    panel.innerHTML = buildDetailRowHtml("実務チェック", "データ待機中");
     return;
   }
 
@@ -1479,12 +1485,7 @@ function renderOperatingCheckPanel(response) {
   const summaryTone = Number(diagnostics.warn_count) > 0 ? "warn" : "ok";
 
   const rows = [
-    `
-    <div class="detail-row check-summary check-${summaryTone}">
-      <span>総合</span>
-      <strong>${diagnostics.summary || "評価結果なし"}</strong>
-    </div>
-  `,
+    buildDetailRowHtml("総合", diagnostics.summary || "評価結果なし", `check-summary check-${summaryTone}`),
   ];
 
   items.forEach((item) => {
@@ -1492,20 +1493,13 @@ function renderOperatingCheckPanel(response) {
     const valueText = Number.isFinite(Number(item.value))
       ? formatNumber(Number(item.value), 3)
       : "-";
-    rows.push(`
-      <div class="detail-row check-${tone}">
-        <span>${item.label}</span>
-        <strong>${item.status === "ok" ? "OK" : "要確認"} (${valueText})</strong>
-      </div>
-      <div class="detail-row check-note">
-        <span>目安</span>
-        <strong>${item.target || "-"}</strong>
-      </div>
-      <div class="detail-row check-note">
-        <span>コメント</span>
-        <strong>${item.message || "-"}</strong>
-      </div>
-    `);
+    rows.push(buildDetailRowHtml(
+      item.label,
+      `${item.status === "ok" ? "OK" : "要確認"} (${valueText})`,
+      `check-${tone}`,
+    ));
+    rows.push(buildDetailRowHtml("目安", item.target || "-", "check-note"));
+    rows.push(buildDetailRowHtml("コメント", item.message || "-", "check-note"));
   });
 
   panel.innerHTML = rows.join("");
@@ -1563,10 +1557,11 @@ function evaluateScenarioObservation(observation) {
   if (!metricName || !comparison) {
     return {
       text,
-      statusLabel: "観測待ち",
-      statusClass: "pending",
-      reason: "判定条件が未設定です。",
+      statusLabel: "確認項目",
+      statusClass: "info",
+      reason: "",
       passed: false,
+      scored: false,
     };
   }
 
@@ -1578,6 +1573,7 @@ function evaluateScenarioObservation(observation) {
       statusClass: "pending",
       reason: "対象メトリクスを算出できませんでした。",
       passed: false,
+      scored: true,
     };
   }
 
@@ -1624,6 +1620,7 @@ function evaluateScenarioObservation(observation) {
         statusClass: "pending",
         reason: "ベースライン未設定のため差分判定できません。",
         passed: false,
+        scored: true,
       };
     }
     const delta = currentValue - baselineValue;
@@ -1638,6 +1635,7 @@ function evaluateScenarioObservation(observation) {
       statusClass: "pending",
       reason: "未対応の比較演算です。",
       passed: false,
+      scored: true,
     };
   }
 
@@ -1647,6 +1645,7 @@ function evaluateScenarioObservation(observation) {
     statusClass: passed ? "ok" : "ng",
     reason: passed ? "" : reason,
     passed,
+    scored: true,
   };
 }
 
@@ -1654,15 +1653,19 @@ function computeScenarioProgress(expectedList) {
   const items = Array.isArray(expectedList) ? expectedList : [];
   const evaluated = items.map((observation) => evaluateScenarioObservation(observation));
   const total = evaluated.length;
-  const passed = evaluated.filter((item) => item.statusClass === "ok").length;
-  const pending = evaluated.filter((item) => item.statusClass === "pending").length;
-  const failed = Math.max(0, total - passed - pending);
+  const scoredTotal = evaluated.filter((item) => item.scored).length;
+  const passed = evaluated.filter((item) => item.scored && item.statusClass === "ok").length;
+  const pending = evaluated.filter((item) => item.scored && item.statusClass === "pending").length;
+  const failed = evaluated.filter((item) => item.scored && item.statusClass === "ng").length;
+  const info = total - scoredTotal;
   return {
     total,
+    scoredTotal,
     passed,
     pending,
     failed,
-    ratio: total > 0 ? passed / total : 0,
+    info,
+    ratio: scoredTotal > 0 ? passed / scoredTotal : 0.0,
   };
 }
 
@@ -2374,14 +2377,17 @@ function renderPlots(data) {
         y: 1.02,
         yanchor: "bottom",
         font: { size: 10 },
-      },
+          const bestRatio = progress.scoredTotal > 0
+            ? Math.max(Number(currentEntry.bestRatio) || 0.0, progress.ratio)
+            : 0.0;
       xaxis: {
         ...plotTheme.xaxis,
         title: "alpha [p.u.]",
         range: [-fixedVectorAxisBound, fixedVectorAxisBound],
         autorange: false,
         constrain: "domain",
-        zeroline: true,
+            lastTotal: progress.scoredTotal,
+            infoTotal: progress.info,
         automargin: true,
       },
       yaxis: {
@@ -2434,35 +2440,34 @@ function renderPlots(data) {
           renderSvpwmPatternPlot(dynamicSnapshot, 0.0);
           updateSvpwmSectorInfo(dynamicSnapshot);
         }
-      },
-      windowsToAnimate,
-      svpwmSnapshot.switchingPeriod,
+              const bestRatio = stored ? Number(stored.bestRatio) || 0.0 : progress.ratio;
+              const hasScoredItems = progress.scoredTotal > 0;
+              const percent = hasScoredItems ? (progress.ratio * 100.0).toFixed(0) : "—";
+              const bestPercent = hasScoredItems ? (bestRatio * 100.0).toFixed(0) : "—";
       svpwmSnapshot.event_times_rel_s,
       oneCycleTime,
-    );
+              if (!hasScoredItems) {
+                recommendation = "このシナリオは数値自動判定を持ちません。ヒントと期待観測に沿って波形を観察してください。";
+              } else if (progress.failed === 0 && progress.pending === 0) {
     const initialWindow = windowsToAnimate && windowsToAnimate[0] ? windowsToAnimate[0] : null;
     if (initialWindow) {
-      const initialWindowSnapshot = {
+                recommendation = "未判定項目があります。ベースライン設定や表示条件を確認してから再評価してください。";
         alphaNow: initialWindow.alpha,
         betaNow: initialWindow.beta,
-        sector: initialWindow.sector,
-        thetaInSector: initialWindow.theta_in_sector,
-        t1: initialWindow.t1,
-        t2: initialWindow.t2,
-        t0: initialWindow.t0,
-        switchingPeriod: svpwmSnapshot.switchingPeriod,
-        sequenceStates: Array.isArray(initialWindow.sequence) ? initialWindow.sequence : [],
-        event_times_rel_s: Array.isArray(initialWindow.event_times_rel_s) ? initialWindow.event_times_rel_s : [],
-      };
-      renderSvpwmPatternPlot(initialWindowSnapshot, 0.0);
-    } else {
-      const zeroVector = isTwoPhaseSvpwm
-        ? inferTwoPhaseZeroVector(uOneCycle[0], vOneCycle[0], wOneCycle[0])
-        : null;
-      const initialSnapshot = buildSvpwmWindowFromAlphaBeta(
-        alphaOneCycle[0],
-        betaOneCycle[0],
-        svpwmSnapshot.switchingPeriod,
+              panel.innerHTML = [
+                buildDetailRowHtml("現在シナリオ", scenario.label, "progress-summary"),
+                buildDetailRowHtml(
+                  "達成率",
+                  hasScoredItems ? `${percent}% (${progress.passed}/${progress.scoredTotal})` : "自動判定なし",
+                  "progress-current",
+                ),
+                buildDetailRowHtml(
+                  "ベスト記録",
+                  hasScoredItems ? `${bestPercent}%` : "自動判定なし",
+                  "progress-best",
+                ),
+                buildDetailRowHtml("次アクション", recommendation, "progress-note"),
+              ].join("");
         zeroVector,
       );
       renderSvpwmPatternPlot(initialSnapshot, 0.0);

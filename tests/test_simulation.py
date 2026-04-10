@@ -762,6 +762,16 @@ class TestScenarioPresets:
 
         assert len(SCENARIO_PRESETS) == 9
 
+    def test_shared_scenario_hints_do_not_depend_on_panel_numbers(self) -> None:
+        """desktop/web 共有ヒントは特定 UI のパネル番号に依存しない."""
+        from ui.visualizer import SCENARIO_PRESETS
+
+        forbidden_tokens = ("①", "②", "③", "④", "⑤", "⑥", "Section")
+        for scenario in SCENARIO_PRESETS:
+            assert not any(token in scenario["hint"] for token in forbidden_tokens), (
+                f"シナリオ '{scenario['label']}' の hint が UI パネル番号に依存している"
+            )
+
 
 class TestSimulationRunnerContract:
     """web 移行 Phase 0 のシミュレーション契約テスト."""
@@ -847,7 +857,8 @@ class TestSimulationRunnerContract:
         assert response["meta"]["reference_mode"] == "third_harmonic"
         assert response["meta"]["sampling_mode"] == "natural"
         assert response["meta"]["clamp_mode"] == "continuous"
-        assert response["meta"]["fft_target"] == "current"
+        assert response["meta"]["fft_target"] == "i_u"
+        assert response["fft"]["target"] == "i_u"
         assert len(response["time"]) <= 1000
         assert len(response["reference"]["u"]) == len(response["time"])
         assert len(response["voltages"]["v_uv"]) == len(response["time"])
@@ -1204,6 +1215,20 @@ class TestEducationContentRegression:
         assert 'label: "ΔV1_LL,pk [V]"' in text
         assert 'label: "ΔI1_u,pk [A]"' in text
 
+    def test_webui_learning_insight_avoids_missing_phi_deg_dependency(self) -> None:
+        """Web UI は API に存在しない metrics.phi_deg を直接参照しない."""
+        text = self._read_repo_text("webui/app.js")
+
+        assert "metrics.phi_deg" not in text
+
+    def test_webui_progress_handles_observation_only_items(self) -> None:
+        """数値判定のない期待観測を進捗不能扱いしない実装断片を維持する."""
+        text = self._read_repo_text("webui/app.js")
+
+        assert 'statusLabel: "確認項目"' in text
+        assert "scoredTotal" in text
+        assert "自動判定なし" in text
+
     def test_user_docs_use_explicit_v1_i1_descriptions(self) -> None:
         """README と user_guide の V1/I1 表記が明確である."""
         readme = self._read_repo_text("README.md")
@@ -1214,6 +1239,12 @@ class TestEducationContentRegression:
         assert "V(rms)" in readme
         assert "V1_LL,pk（線間電圧 v_uv の基本波ピーク）" in user_guide
         assert "I1_u,pk（相電流 i_u の基本波ピーク）" in user_guide
+
+    def test_readme_mentions_sweep_endpoint(self) -> None:
+        """README が web UI でも使う /sweep エンドポイントを案内する."""
+        readme = self._read_repo_text("README.md")
+
+        assert "/sweep" in readme
 
 
 class TestWebApi:

@@ -38,6 +38,10 @@ FFT_TARGET_LABELS = {
     "voltage": "Line Voltage v_uv",
     "current": "Phase Current i_u",
 }
+FFT_TARGET_API_KEYS = {
+    "voltage": "v_uv",
+    "current": "i_u",
+}
 FFT_WINDOW_LABELS = {
     "hann": "Hann",
     "rectangular": "Rectangular",
@@ -225,6 +229,13 @@ def _build_web_fft_payload(
         "thd": float(spectrum["thd"]),
         "dc_component": float(spectrum["dc_component"]),
     }
+
+
+def _to_api_fft_target_key(fft_target: str) -> str:
+    """内部 FFT ターゲットを API 公開キーへ写像する."""
+    if fft_target not in FFT_TARGET_API_KEYS:
+        raise ValueError(f"Unsupported fft_target: {fft_target}")
+    return FFT_TARGET_API_KEYS[fft_target]
 
 
 def _clarke_alpha_beta(
@@ -995,6 +1006,7 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
     spectra = results["spectra"]
     metrics = results["metrics"]
     meta = results["meta"]
+    api_fft_target = _to_api_fft_target_key(str(meta["fft_target"]))
 
     response = {
         "meta": {
@@ -1006,7 +1018,7 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
             "clamp_mode": meta["clamp_mode"],
             "modulation_summary_label": meta["modulation_summary_label"],
             "overmod_view": bool(meta["overmod_view"]),
-            "fft_target": meta["fft_target"],
+            "fft_target": api_fft_target,
             "fft_window": meta["fft_window"],
             "points_per_carrier": int(meta["points_per_carrier"]),
             "n_display_cycles": int(meta["n_display_cycles"]),
@@ -1086,7 +1098,7 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
             "i_u_theory": _to_serializable_list(np.asarray(currents["i_u_theory"])[time_indices]),
         },
         "fft": {
-            "target": meta["fft_target"],
+            "target": api_fft_target,
             "window": meta["fft_window"],
             "v_uv": _build_web_fft_payload(spectra["v_uv"], max_points),
             "v_uN": _build_web_fft_payload(spectra["v_uN"], max_points),

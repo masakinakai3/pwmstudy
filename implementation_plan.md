@@ -12,11 +12,11 @@
 - UI が V_dc, V_LL(rms), f, f_c, t_d, V_on, R, L の 8 パラメータと PWM 方式を操作できる
 - UI が FFT 表示対象と FFT 窓関数を切り替えられる
 - 6段の波形表示と情報パネルが動作する
-- PWM 方式比較として Natural Sampling 固定の SPWM、Third Harmonic Injection、Min-Max Zero-Sequence を切り替えられる
+- 利用者向け 5 方式（carrier / carrier_third_harmonic / carrier_two_phase / space_vector / space_vector_two_phase）を切り替えられる
 - 定常区間のみを表示するための助走ロジックがある
 - FFT により基本波振幅・位相・THD を算出できる
 - 理論電流と FFT 実測電流基本波を同一物理量として比較できる
-- tests/test_simulation.py の 65 件がすべて通る
+- tests/test_simulation.py の現行回帰テストがすべて通る
 
 ## 3. 前提条件
 
@@ -119,7 +119,7 @@ $$
 
 #### Phase 2 の作業内容
 
-1. 必要に応じて規則サンプリングのサンプルホールドを適用する
+1. Natural sampling 固定の比較波形を扱い、削除済み regular sampling は受け付けない
 2. 各相で v_x > v_carrier を比較し S_x を生成する
 3. デッドタイムを適用してレグ状態 {-1, 0, +1} を生成する
 4. 理想ゲート入力またはレグ状態入力から線間電圧を求める
@@ -139,7 +139,7 @@ $$
 #### Phase 2 の受け入れ条件
 
 - S_u, S_v, S_w が 0 または 1 のみで構成される
-- 規則サンプリングでは各キャリア周期の変調信号が保持波形になる
+- 削除済み regular sampling 指定がエラーとして拒否される
 - v_uv + v_vw + v_wu = 0 が成り立つ
 - v_uN + v_vN + v_wN = 0 が成り立つ
 - 線間電圧が {-V_dc, 0, +V_dc} の 3 レベルになる

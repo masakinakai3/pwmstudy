@@ -45,7 +45,7 @@
                               │
 ┌─────────────────────────────▼──────────────────────────────┐
 │                      tests/                                │
-│ 65件の物理妥当性 + application/API/UI 回帰                 │
+│ 物理妥当性 + application/API/UI 回帰テスト群               │
 └────────────────────────────────────────────────────────────┘
 ```
 
@@ -180,7 +180,7 @@ $$
 3. 線間電圧 + 基本波オーバーレイ
 4. 相電圧 + 基本波オーバーレイ
 5. 相電流 + 理論電流オーバーレイ
-6. 線間電圧 FFT スペクトル
+6. FFT スペクトル（線間電圧 / 相電流切替）
 
 加えて、図の左上に以下を表示する情報パネルを持つ。
 
@@ -200,7 +200,7 @@ $$
 - シミュレーション入力: V_LL は RMS、f_c は Hz、t_d は s、L は H
 - 表示軸: 時間は ms、FFT は kHz
 
-この変換を ui/visualizer.py に閉じ込めることで、simulation 配下の pure function は SI 単位前提で単純化している。
+この変換を application/simulation_service.py に集約することで、desktop/web の両 UI で同じ SI 単位前提を再利用している。
 
 ## 8. 物理モデルの前提と制約
 
@@ -225,7 +225,7 @@ $$
 
 ## 9. 品質保証アーキテクチャ
 
-tests/test_simulation.py に 65 件のテストを集約し、以下を検証する。
+tests/test_simulation.py に回帰テストを集約し、以下を検証する。
 
 - 三相変調信号の総和が 0
 - 変調信号とキャリアの値域が正しい
@@ -244,7 +244,7 @@ tests/test_simulation.py に 65 件のテストを集約し、以下を検証す
 - 既知高調波合成波の THD と RMS 指標が理論値と一致する
 - RL 負荷により電流 THD が電圧 THD より低くなる
 - application 層の単位変換、export、baseline 契約が保たれる
-- FastAPI の /health, /scenarios, /simulate と静的 web UI 配信が疎通する
+- FastAPI の /health, /scenarios, /simulate, /sweep と静的 web UI 配信が疎通する
 
 ## 10. ディレクトリ構成
 
