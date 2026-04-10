@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>三相PWMインバータ Web Simulator</title>
   <link rel="preconnect" href="https://cdn.plot.ly">
-  <link rel="stylesheet" href="/static/styles.css?v=20260405a">
+  <link rel="stylesheet" href="/static/styles.css?v=20260410a">
 </head>
 <body>
   <div class="app-shell">
@@ -185,6 +185,10 @@
                 <input type="checkbox" id="showWRef" checked>
                 <span>W相電圧指令</span>
               </label>
+              <label class="section1-toggle-item" id="showZeroSequenceLabel" hidden>
+                <input type="checkbox" id="showZeroSequence">
+                <span>零相成分</span>
+              </label>
             </div>
             <div id="section1AnimationControls" class="section1-animation-controls" hidden>
               <div class="section1-timeline-control">
@@ -246,6 +250,19 @@
             <div class="plot-card" id="svpwmPatternCard" hidden>
               <div id="svpwmPatternPlot" class="plot-surface"></div>
             </div>
+            <div class="plot-card" id="dwellTimeCard" hidden>
+              <div id="dwellTimePlot" class="plot-surface"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="plot-section" id="dutyRatioSection" hidden>
+          <div class="section-header">
+            <p class="eyebrow">Duty Ratio</p>
+            <h2>デューティ比形成</h2>
+          </div>
+          <div class="plot-card full-width">
+            <div id="dutyRatioPlot" class="plot-surface"></div>
           </div>
         </section>
 
@@ -253,9 +270,18 @@
           <div class="section-header">
             <p class="eyebrow">Section 2</p>
             <h2>スイッチングパターン</h2>
+            <div class="section1-toggle-group">
+              <label class="section1-toggle-item">
+                <input type="checkbox" id="showVectorStates">
+                <span>ベクトル状態</span>
+              </label>
+            </div>
           </div>
           <div class="plot-card full-width">
             <div id="switchingPlot" class="plot-surface"></div>
+          </div>
+          <div class="plot-card full-width" id="vectorStateCard" hidden>
+            <div id="vectorStatePlot" class="plot-surface"></div>
           </div>
         </section>
 
@@ -275,6 +301,10 @@
               <label class="section1-toggle-item">
                 <input type="checkbox" id="showLineVwu">
                 <span>v_wu</span>
+              </label>
+              <label class="section1-toggle-item">
+                <input type="checkbox" id="showDeadtimeError">
+                <span>デッドタイム誤差</span>
               </label>
             </div>
           </div>
@@ -302,11 +332,30 @@
             </div>
           </div>
         </section>
+
+        <section class="plot-section" id="sweepSection">
+          <div class="section-header">
+            <p class="eyebrow">Overmod Sweep</p>
+            <h2>過変調 m_a スイープ</h2>
+          </div>
+          <div class="action-grid" style="margin-bottom: 12px">
+            <button type="button" id="sweepRunButton" class="action-button">スイープ実行</button>
+            <button type="button" id="sweepAnimateButton" class="action-button secondary" disabled>再生</button>
+          </div>
+          <div class="plot-grid two-up">
+            <div class="plot-card">
+              <div id="sweepV1Plot" class="plot-surface"></div>
+            </div>
+            <div class="plot-card">
+              <div id="sweepThdPlot" class="plot-surface"></div>
+            </div>
+          </div>
+        </section>
       </section>
     </main>
   </div>
 
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-  <script src="/static/app.js?v=20260405d"></script>
+  <script src="/static/app.js?v=20260410a"></script>
 </body>
 </html>

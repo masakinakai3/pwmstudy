@@ -6,7 +6,7 @@
 - テストは `test_simulation.py` に集約（モジュール単位のクラスで構成）
 
 ```bash
-python -m pytest tests -v           # 全テスト（65件）
+python -m pytest tests -v           # 全テスト（74件）
 python -m pytest tests -k "RlLoad"  # 特定クラスのみ
 ```
 

@@ -61,3 +61,22 @@ class SimulationRequest(BaseModel):
             "fft_target": fft_target,
             "fft_window": self.fft_window,
         }
+
+
+class SweepRequest(BaseModel):
+    """sweep エンドポイントの入力スキーマ."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    V_dc: float = Field(ge=100.0, le=600.0)
+    f: float = Field(ge=1.0, le=200.0)
+    f_c: float = Field(ge=1000.0, le=20000.0)
+    t_d: float = Field(ge=0.0, le=1.0e-5, default=0.0)
+    V_on: float = Field(ge=0.0, le=5.0, default=0.0)
+    R: float = Field(ge=0.1, le=100.0)
+    L: float = Field(ge=0.1e-3, le=100e-3)
+    modulation_mode: ModulationMode | None = Field(default=None)
+    fft_window: FftWindow = "hann"
+    n_points: int = Field(ge=5, le=50, default=25)
+    m_a_min: float = Field(ge=0.1, le=2.0, default=0.2)
+    m_a_max: float = Field(ge=0.1, le=2.0, default=1.5)

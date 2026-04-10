@@ -627,6 +627,10 @@ select,
   grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
 }
 
+.section1-split.three-up {
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 0.8fr);
+}
+
 .plot-card {
   border-radius: var(--radius-lg);
   padding: 10px;

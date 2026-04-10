@@ -32,7 +32,7 @@ POINTS_PER_CARRIER = 100
 N_DISPLAY_CYCLES = 2
 N_WARMUP_CYCLES_MIN = 5
 NONIDEAL_CORRECTION_STEPS = 2
-SIMULATION_API_VERSION = "phase6-v1"
+SIMULATION_API_VERSION = "phase7-v1"
 
 FFT_TARGET_LABELS = {
     "voltage": "Line Voltage v_uv",
@@ -348,6 +348,15 @@ def _build_svpwm_observer_payload(
             }
         )
 
+    # Feature 4: 滞留時間比率の事前計算
+    dwell_times = {
+        "window_centers_s": [float(w["start_s"] + 0.5 * T_s) for w in windows],
+        "t1_ratio": [float(w["t1"] / T_s) for w in windows],
+        "t2_ratio": [float(w["t2"] / T_s) for w in windows],
+        "t0_ratio": [float(w["t0"] / T_s) for w in windows],
+        "sectors": [int(w["sector"]) for w in windows],
+    }
+
     return {
         "enabled": True,
         "time_s": t_disp,
@@ -361,7 +370,69 @@ def _build_svpwm_observer_payload(
             "beta": beta_hold,
         },
         "windows": windows,
+        "dwell_times": dwell_times,
         "switching_period_s": float(T_s),
+    }
+
+
+def _compute_duty_ratios(
+    S_u: np.ndarray,
+    S_v: np.ndarray,
+    S_w: np.ndarray,
+    t: np.ndarray,
+    f_c: float,
+    v_u_mod: np.ndarray,
+    v_v_mod: np.ndarray,
+    v_w_mod: np.ndarray,
+) -> dict[str, list[float]]:
+    """キャリア周期ごとの実測デューティと理論デューティを計算する.
+
+    Args:
+        S_u, S_v, S_w: スイッチング信号 (0/1)
+        t: 時間配列 [s]
+        f_c: キャリア周波数 [Hz]
+        v_u_mod, v_v_mod, v_w_mod: 変調信号 (正規化振幅 ±1)
+
+    Returns:
+        キャリア周期ごとのデューティ比辞書。
+    """
+    T_c = 1.0 / f_c
+    t0 = t[0]
+    period_idx = np.floor((t - t0) / T_c).astype(np.int64)
+    n_periods = int(period_idx[-1]) + 1
+
+    time_centers: list[float] = []
+    du: list[float] = []
+    dv: list[float] = []
+    dw: list[float] = []
+    du_theory: list[float] = []
+    dv_theory: list[float] = []
+    dw_theory: list[float] = []
+
+    for k in range(n_periods):
+        mask = period_idx == k
+        count = int(np.sum(mask))
+        if count < 2:
+            continue
+        t_seg = t[mask]
+        time_centers.append(float(0.5 * (t_seg[0] + t_seg[-1])))
+        du.append(float(np.mean(S_u[mask])))
+        dv.append(float(np.mean(S_v[mask])))
+        dw.append(float(np.mean(S_w[mask])))
+        # 理論デューティ: d_x = (1 + v_x_mod) / 2
+        idx0 = int(np.argmax(mask))
+        du_theory.append(float(np.clip((1.0 + v_u_mod[idx0]) / 2.0, 0.0, 1.0)))
+        dv_theory.append(float(np.clip((1.0 + v_v_mod[idx0]) / 2.0, 0.0, 1.0)))
+        dw_theory.append(float(np.clip((1.0 + v_w_mod[idx0]) / 2.0, 0.0, 1.0)))
+
+    return {
+        "time_centers": time_centers,
+        "u": du,
+        "v": dv,
+        "w": dw,
+        "u_theory": du_theory,
+        "v_theory": dv_theory,
+        "w_theory": dw_theory,
     }
 
 
@@ -534,6 +605,21 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
         limit_linear=limit_linear,
         clamp_mode=clamp_mode,
     )
+
+    # Feature 3: 零相注入分解 — 純正弦波参照と零相成分を分離
+    omega = 2.0 * np.pi * f
+    V_ph_peak_decomp = V_ll * np.sqrt(2.0) / np.sqrt(3.0)
+    m_a_decomp = 2.0 * V_ph_peak_decomp / V_dc
+    if limit_linear:
+        m_a_lim_decomp = THIRD_HARMONIC_LIMIT if reference_mode in {
+            "third_harmonic", "minmax"
+        } else 1.0
+        m_a_decomp = min(m_a_decomp, m_a_lim_decomp)
+    v_u_pure = m_a_decomp * np.sin(omega * t)
+    v_v_pure = m_a_decomp * np.sin(omega * t - 2.0 * np.pi / 3.0)
+    v_w_pure = m_a_decomp * np.sin(omega * t + 2.0 * np.pi / 3.0)
+    v_zero_seq = v_u_ref - v_u_pure
+
     v_u_mod, v_v_mod, v_w_mod = apply_sampling_mode(
         v_u_ref,
         v_v_ref,
@@ -570,6 +656,20 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
     S_v_plot = (leg_v == 1).astype(np.int32)
     S_w_plot = (leg_w == 1).astype(np.int32)
 
+    # Feature 1: ベクトル状態指標 (V0=0, V1=4, ..., V7=7)
+    vector_states = (4 * S_u_plot + 2 * S_v_plot + S_w_plot).astype(np.int32)
+
+    # Feature 6: デッドタイム誤差 (理想 vs 実)
+    if t_d > 0.0 or V_on > 0.0:
+        v_uN_error = v_uN - v_uN_ideal
+        v_vN_error = v_vN - v_vN_ideal
+        v_wN_error = v_wN - v_wN_ideal
+    else:
+        n_pts = len(v_uN)
+        v_uN_error = np.zeros(n_pts)
+        v_vN_error = np.zeros(n_pts)
+        v_wN_error = np.zeros(n_pts)
+
     T_display = N_DISPLAY_CYCLES / f
     n_display = int(round(T_display / dt_actual)) + 1
     sl = slice(-n_display, None)
@@ -585,6 +685,13 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
         v_w_ref[sl],
         f_c,
         modulation_mode,
+    )
+
+    # Feature 2: デューティ比形成
+    duty_ratios = _compute_duty_ratios(
+        S_u_plot[sl], S_v_plot[sl], S_w_plot[sl],
+        t_disp, f_c,
+        v_u_mod[sl], v_v_mod[sl], v_w_mod[sl],
     )
 
     fft_vuv = analyze_spectrum(v_uv[fft_slice], dt_actual, f, window_mode=fft_window)
@@ -679,6 +786,12 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
             "v": leg_v[sl],
             "w": leg_w[sl],
         },
+        "vector_states": {
+            "indices": vector_states[sl],
+            "usage_pct": [
+                float(np.mean(vector_states[sl] == k) * 100.0) for k in range(8)
+            ],
+        },
         "voltages": {
             "v_uv": v_uv[sl],
             "v_vw": v_vw[sl],
@@ -689,6 +802,25 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
             "v_uv_fund": v_uv_fund,
             "v_uN_fund": v_uN_fund,
         },
+        "voltages_ideal": {
+            "v_uN": v_uN_ideal[sl],
+            "v_vN": v_vN_ideal[sl],
+            "v_wN": v_wN_ideal[sl],
+        },
+        "deadtime_error": {
+            "v_uN": v_uN_error[sl],
+            "v_vN": v_vN_error[sl],
+            "v_wN": v_wN_error[sl],
+        },
+        "reference_decomposition": {
+            "u_pure": v_u_pure[sl],
+            "v_pure": v_v_pure[sl],
+            "w_pure": v_w_pure[sl],
+            "zero_sequence": v_zero_seq[sl],
+            "peak_combined": float(np.max(np.abs(v_u_ref[sl]))),
+            "peak_pure": float(np.max(np.abs(v_u_pure[sl]))),
+        },
+        "duty_ratios": duty_ratios,
         "currents": {
             "i_u": i_u[sl],
             "i_v": i_v[sl],
@@ -726,6 +858,7 @@ def run_simulation(params: Mapping[str, object]) -> dict[str, object]:
             "I_theory": I_theory_peak,
             "I_measured": I_measured,
             "pf1_fft": pf1_fft,
+            "delta_v_dt_theory": float(t_d * f_c * V_dc),
         },
         "diagnostics": diagnostics,
         "t": t_disp,
@@ -950,6 +1083,52 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
         "diagnostics": results["diagnostics"],
     }
 
+    # Feature 1: ベクトル状態
+    vs_arr = np.asarray(results["vector_states"]["indices"])
+    vs_indices = _select_change_point_indices((vs_arr.astype(np.float64),), max_points)
+    response["vector_states"] = {
+        "time": _to_serializable_list(display_time[vs_indices]),
+        "indices": [int(x) for x in vs_arr[vs_indices]],
+        "usage_pct": results["vector_states"]["usage_pct"],
+    }
+
+    # Feature 6: デッドタイム誤差
+    ideal_uN = np.asarray(results["voltages_ideal"]["v_uN"])
+    error_uN = np.asarray(results["deadtime_error"]["v_uN"])
+    dt_err_indices = _select_extrema_preserving_indices(
+        (ideal_uN, error_uN), max_points,
+    )
+    response["voltages_ideal"] = {
+        "time": _to_serializable_list(display_time[dt_err_indices]),
+        "v_uN": _to_serializable_list(ideal_uN[dt_err_indices]),
+    }
+    response["deadtime_error"] = {
+        "time": _to_serializable_list(display_time[dt_err_indices]),
+        "v_uN": _to_serializable_list(error_uN[dt_err_indices]),
+    }
+    response["metrics"]["delta_v_dt_theory"] = float(
+        results["metrics"].get("delta_v_dt_theory", 0.0)
+    )
+
+    # Feature 3: 零相注入分解
+    ref_decomp = results.get("reference_decomposition")
+    if ref_decomp is not None:
+        response["reference_decomposition"] = {
+            "u_pure": _to_serializable_list(np.asarray(ref_decomp["u_pure"])[time_indices]),
+            "v_pure": _to_serializable_list(np.asarray(ref_decomp["v_pure"])[time_indices]),
+            "w_pure": _to_serializable_list(np.asarray(ref_decomp["w_pure"])[time_indices]),
+            "zero_sequence": _to_serializable_list(
+                np.asarray(ref_decomp["zero_sequence"])[time_indices]
+            ),
+            "peak_combined": float(ref_decomp["peak_combined"]),
+            "peak_pure": float(ref_decomp["peak_pure"]),
+        }
+
+    # Feature 2: デューティ比 (already plain Python lists)
+    duty_ratios = results.get("duty_ratios")
+    if duty_ratios is not None:
+        response["duty_ratios"] = duty_ratios
+
     svpwm_observer = results.get("svpwm_observer")
     if svpwm_observer is not None:
         observer_time = np.asarray(svpwm_observer["time_s"])
@@ -994,6 +1173,108 @@ def build_web_response(results: Mapping[str, object], max_points: int = 1000) ->
                 }
                 for window in svpwm_observer["windows"]
             ],
+            "dwell_times": svpwm_observer.get("dwell_times"),
         }
 
     return response
+
+
+def run_sweep(
+    V_dc: float,
+    f: float,
+    f_c: float,
+    R: float,
+    L: float,
+    modulation_mode: str,
+    fft_window: str = "hann",
+    t_d: float = 0.0,
+    V_on: float = 0.0,
+    n_points: int = 25,
+    m_a_min: float = 0.2,
+    m_a_max: float = 1.5,
+) -> dict[str, object]:
+    """m_a をスイープし、各点の主要メトリクスを収集する.
+
+    Args:
+        V_dc: DC バス電圧 [V]
+        f: 基本波周波数 [Hz]
+        f_c: キャリア周波数 [Hz]
+        R: 負荷抵抗 [Ω]
+        L: 負荷インダクタンス [H]
+        modulation_mode: 変調方式
+        fft_window: FFT 窓関数
+        t_d: デッドタイム [s]
+        V_on: オン電圧 [V]
+        n_points: スイープ点数
+        m_a_min: 最小変調率
+        m_a_max: 最大変調率
+
+    Returns:
+        スイープ結果辞書。
+    """
+    from application.modulation_config import normalize_modulation_mode
+
+    modulation_mode = normalize_modulation_mode(modulation_mode)
+    m_a_values = np.linspace(m_a_min, m_a_max, n_points)
+
+    results: list[dict[str, float]] = []
+    for m_a_target in m_a_values:
+        # m_a → V_ll を逆算: m_a = 2*V_ph_peak/V_dc, V_ph_peak = V_ll_rms*sqrt(2)/sqrt(3)
+        # ∴ V_ll_rms = m_a * V_dc * sqrt(3) / (2 * sqrt(2))
+        V_ll_rms = float(m_a_target * V_dc * np.sqrt(3.0) / (2.0 * np.sqrt(2.0)))
+        params = {
+            "V_dc": V_dc,
+            "V_ll": V_ll_rms,
+            "f": f,
+            "f_c": f_c,
+            "t_d": t_d,
+            "V_on": V_on,
+            "R": R,
+            "L": L,
+            "modulation_mode": modulation_mode,
+            "overmod_view": True,  # 過変調観察モードで実行
+            "fft_target": "voltage",
+            "fft_window": fft_window,
+        }
+        sim = run_simulation(params)
+        metrics = sim["metrics"]
+        spectra = sim["spectra"]
+        results.append({
+            "m_a_target": float(m_a_target),
+            "m_a_actual": float(metrics["m_a"]),
+            "V1_pk": float(spectra["v_uv"]["fundamental_mag"]),
+            "V_rms": float(spectra["v_uv"]["rms_total"]),
+            "THD_V": float(spectra["v_uv"]["thd"]),
+            "I1_pk": float(spectra["i_u"]["fundamental_mag"]),
+            "THD_I": float(spectra["i_u"]["thd"]),
+        })
+
+    m_a_limit_val = float(results[0]["m_a_actual"]) if results else 1.0
+    # 線形限界は最初の sim の m_a_limit から取得
+    first_params = {
+        "V_dc": V_dc,
+        "V_ll": float(0.5 * V_dc * np.sqrt(3.0) / (2.0 * np.sqrt(2.0))),
+        "f": f,
+        "f_c": f_c,
+        "t_d": t_d,
+        "V_on": V_on,
+        "R": R,
+        "L": L,
+        "modulation_mode": modulation_mode,
+        "overmod_view": False,
+        "fft_target": "voltage",
+        "fft_window": fft_window,
+    }
+    ref_sim = run_simulation(first_params)
+    m_a_limit_val = float(ref_sim["metrics"]["m_a_limit"])
+
+    return {
+        "points": results,
+        "m_a_limit": m_a_limit_val,
+        "modulation_mode": modulation_mode,
+        "V_dc": V_dc,
+        "f": f,
+        "f_c": f_c,
+        "R": R,
+        "L": L,
+    }

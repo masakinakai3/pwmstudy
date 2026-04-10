@@ -54,6 +54,14 @@ const modulationModeHints = {
 
 const SQRT3 = Math.sqrt(3.0);
 
+const VECTOR_LABELS = ["V0","V1","V2","V3","V4","V5","V6","V7"];
+const VECTOR_COLORS = ["#888","#c14f2c","#d97706","#4e7a76","#3b82f6","#6a5495","#ec4899","#666"];
+const VECTOR_ALPHA_BETA = [
+  {a:0, b:0}, {a:2/3, b:0}, {a:1/3, b:Math.sqrt(3)/3},
+  {a:-1/3, b:Math.sqrt(3)/3}, {a:-2/3, b:0},
+  {a:-1/3, b:-Math.sqrt(3)/3}, {a:1/3, b:-Math.sqrt(3)/3}, {a:0, b:0},
+];
+
 function buildModulationHint(modulationMode) {
   return `${modulationModeHints[modulationMode]} サンプリング方式は Natural 固定です。`;
 }
@@ -934,6 +942,15 @@ function initializeControls() {
         renderPlots(currentResponse);
       }
     });
+  });
+  document.getElementById("showVectorStates").addEventListener("change", () => {
+    if (currentResponse) renderPlots(currentResponse);
+  });
+  document.getElementById("showDeadtimeError").addEventListener("change", () => {
+    if (currentResponse) renderPlots(currentResponse);
+  });
+  document.getElementById("showZeroSequence").addEventListener("change", () => {
+    if (currentResponse) renderPlots(currentResponse);
   });
 
   document.getElementById("resetButton").addEventListener("click", () => {
@@ -1838,6 +1855,240 @@ function applyScenario(index) {
   scheduleSimulation();
 }
 
+function renderDutyRatioPlot(data) {
+  const section = document.getElementById("dutyRatioSection");
+  if (!section) return;
+  const dr = data.duty_ratios;
+  if (!dr || !dr.time_centers || dr.time_centers.length === 0) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+  const timeMs = dr.time_centers.map((t) => t * 1000.0);
+  const traces = [
+    {
+      x: timeMs, y: dr.u,
+      name: "U 実測", mode: "lines",
+      line: { color: "#c14f2c", width: 2, shape: "hv" },
+    },
+    {
+      x: timeMs, y: dr.u_theory,
+      name: "U 理論", mode: "lines",
+      line: { color: "#c14f2c", width: 1.5, dash: "dash" },
+    },
+    {
+      x: timeMs, y: dr.v,
+      name: "V 実測", mode: "lines",
+      line: { color: "#4e7a76", width: 2, shape: "hv" },
+    },
+    {
+      x: timeMs, y: dr.v_theory,
+      name: "V 理論", mode: "lines",
+      line: { color: "#4e7a76", width: 1.5, dash: "dash" },
+    },
+    {
+      x: timeMs, y: dr.w,
+      name: "W 実測", mode: "lines",
+      line: { color: "#6a5495", width: 2, shape: "hv" },
+    },
+    {
+      x: timeMs, y: dr.w_theory,
+      name: "W 理論", mode: "lines",
+      line: { color: "#6a5495", width: 1.5, dash: "dash" },
+    },
+  ];
+  Plotly.react("dutyRatioPlot", traces, {
+    ...plotTheme,
+    title: "デューティ比: 実測 vs 理論 d=(1+v*)/2",
+    xaxis: { ...plotTheme.xaxis, title: "時間 [ms]" },
+    yaxis: { ...plotTheme.yaxis, title: "デューティ比", range: [0, 1] },
+    legend: { ...plotTheme.legend, orientation: "h", y: -0.18 },
+  }, { responsive: true, displayModeBar: false });
+}
+
+function renderVectorStatePlot(data) {
+  const card = document.getElementById("vectorStateCard");
+  if (!card) return;
+  const showVectorStates = document.getElementById("showVectorStates");
+  if (!showVectorStates || !showVectorStates.checked || !data.vector_states) {
+    card.hidden = true;
+    return;
+  }
+  card.hidden = false;
+  const vs = data.vector_states;
+  const timeMs = vs.time.map(v => v * 1000.0);
+
+  // Single trace with color per vector
+  const traces = [{
+    x: timeMs,
+    y: vs.indices,
+    mode: "lines",
+    line: { color: "#4e7a76", width: 2, shape: "hv" },
+    name: "Vector state",
+    hovertemplate: "t=%{x:.3f}ms<br>%{text}<extra></extra>",
+    text: vs.indices.map(i => VECTOR_LABELS[i] || "?"),
+  }];
+
+  // Usage bar as annotation
+  const usageText = vs.usage_pct
+    .map((pct, i) => pct > 0.5 ? `${VECTOR_LABELS[i]}:${pct.toFixed(1)}%` : "")
+    .filter(s => s).join("  ");
+
+  Plotly.react("vectorStatePlot", traces, {
+    ...plotTheme,
+    title: "電圧ベクトル状態 (V0〜V7)",
+    xaxis: { ...plotTheme.xaxis, title: "時間 [ms]" },
+    yaxis: {
+      ...plotTheme.yaxis,
+      title: "ベクトル",
+      tickvals: [0, 1, 2, 3, 4, 5, 6, 7],
+      ticktext: VECTOR_LABELS,
+      range: [-0.5, 7.5],
+    },
+    annotations: [{
+      xref: "paper", yref: "paper", x: 1, y: 1.12,
+      xanchor: "right", yanchor: "bottom",
+      text: usageText,
+      showarrow: false,
+      font: { size: 10, color: "#5b6468" },
+    }],
+    margin: { ...plotTheme.margin, t: 60 },
+  }, { responsive: true, displayModeBar: false });
+}
+
+function renderDwellTimePlot(data, highlightIdx = null) {
+  const card = document.getElementById("dwellTimeCard");
+  if (!card) return;
+  const observer = data.svpwm_observer;
+  const inSvMode = isSpaceVectorMode(data.meta.modulation_mode);
+  if (!inSvMode || !observer || !observer.enabled || !observer.dwell_times) {
+    card.hidden = true;
+    return;
+  }
+  card.hidden = false;
+  const dt = observer.dwell_times;
+  const centersMs = dt.window_centers_s.map(v => v * 1000.0);
+
+  const t0Trace = {
+    x: centersMs, y: dt.t0_ratio,
+    name: "T0 (零)", type: "bar",
+    marker: { color: dt.t0_ratio.map(v => v < 0.01 ? "#dc2626" : "rgba(193,79,44,0.7)") },
+    hovertemplate: "T0/Ts=%{y:.3f}<extra></extra>",
+  };
+  const t1Trace = {
+    x: centersMs, y: dt.t1_ratio,
+    name: "T1 (Va)", type: "bar",
+    marker: { color: "rgba(59,130,246,0.75)" },
+    hovertemplate: "T1/Ts=%{y:.3f}<extra></extra>",
+  };
+  const t2Trace = {
+    x: centersMs, y: dt.t2_ratio,
+    name: "T2 (Vb)", type: "bar",
+    marker: { color: "rgba(78,122,118,0.75)" },
+    hovertemplate: "T2/Ts=%{y:.3f}<extra></extra>",
+  };
+
+  const shapes = [];
+  if (highlightIdx !== null && highlightIdx >= 0 && highlightIdx < centersMs.length) {
+    const halfW = centersMs.length > 1
+      ? Math.abs(centersMs[1] - centersMs[0]) * 0.5
+      : 0.01;
+    shapes.push({
+      type: "rect",
+      x0: centersMs[highlightIdx] - halfW,
+      x1: centersMs[highlightIdx] + halfW,
+      y0: 0, y1: 1,
+      fillcolor: "rgba(24,33,38,0.12)",
+      line: { color: "#182126", width: 1.5 },
+      layer: "above",
+    });
+  }
+
+  // Find windows where T0 is near zero
+  const annotations = [];
+  const nearZeroIdx = dt.t0_ratio.findIndex(v => v < 0.01);
+  if (nearZeroIdx >= 0) {
+    annotations.push({
+      x: centersMs[nearZeroIdx], y: 1.05,
+      text: "T0≈0 線形限界",
+      showarrow: true, arrowhead: 2, ax: 0, ay: -25,
+      font: { size: 10, color: "#dc2626" },
+    });
+  }
+
+  Plotly.react("dwellTimePlot", [t0Trace, t1Trace, t2Trace], {
+    ...plotTheme,
+    title: "滞留時間配分 T1/T2/T0",
+    barmode: "stack",
+    xaxis: { ...plotTheme.xaxis, title: "時間 [ms]" },
+    yaxis: { ...plotTheme.yaxis, title: "T/Ts", range: [0, 1.1] },
+    shapes,
+    annotations,
+  }, { responsive: true, displayModeBar: false });
+}
+
+function appendDeadtimeErrorTraces(data, traces, phaseVoltageTimeMs) {
+  const showDt = document.getElementById("showDeadtimeError");
+  if (!showDt || !showDt.checked) return { traces, annotations: [] };
+  if (!data.voltages_ideal || !data.deadtime_error) return { traces, annotations: [] };
+
+  const dtErrTime = data.deadtime_error.time.map(v => v * 1000.0);
+  const idealTime = data.voltages_ideal.time.map(v => v * 1000.0);
+
+  // Ideal voltage trace
+  traces.push({
+    x: idealTime,
+    y: data.voltages_ideal.v_uN,
+    name: "v_uN 理想",
+    line: { color: "#3b82f6", width: 1.8, dash: "dash", shape: "hv" },
+    opacity: 0.7,
+  });
+
+  // Error fill
+  traces.push({
+    x: dtErrTime,
+    y: data.deadtime_error.v_uN,
+    name: "DT誤差",
+    fill: "tozeroy",
+    fillcolor: "rgba(193,79,44,0.12)",
+    line: { color: "rgba(193,79,44,0.5)", width: 1 },
+    hovertemplate: "誤差=%{y:.1f}V<extra></extra>",
+  });
+
+  // Current sign coloring (positive green, negative orange)
+  const timeMs = data.time.map(v => v * 1000.0);
+  const iU = data.currents.i_u;
+  const iMax = Math.max(...iU.map(Math.abs)) || 1;
+  const yScale = (Math.max(...data.voltages_ideal.v_uN.map(Math.abs)) || 100) * 0.15;
+  traces.push({
+    x: timeMs,
+    y: iU.map(v => v / iMax * yScale),
+    name: "i_u符号",
+    mode: "lines",
+    line: { color: "#888", width: 0 },
+    fill: "tozeroy",
+    fillcolor: "rgba(34,197,94,0.1)",
+    showlegend: false,
+    hoverinfo: "skip",
+  });
+
+  const deltaV = data.metrics.delta_v_dt_theory || 0;
+  const annotations = [];
+  if (deltaV > 0.1) {
+    annotations.push({
+      xref: "paper", yref: "paper", x: 1, y: 1.1,
+      xanchor: "right", yanchor: "bottom",
+      text: `Δv_dt ≈ ±${deltaV.toFixed(1)}V (t_d×f_c×V_dc)`,
+      showarrow: false,
+      font: { size: 11, color: "#c14f2c" },
+      bgcolor: "rgba(255,250,242,0.85)",
+      borderpad: 3,
+    });
+  }
+
+  return { traces, annotations };
+}
+
 function renderPlots(data) {
   stopSvpwmVectorAnimation();
   Plotly.purge("referencePlot");
@@ -1845,11 +2096,10 @@ function renderPlots(data) {
   const section1PlotGrid = document.getElementById("section1PlotGrid");
 
   function setSection1SplitLayout(enabled) {
-    if (!section1PlotGrid) {
-      return;
-    }
+    if (!section1PlotGrid) return;
     section1PlotGrid.classList.toggle("two-up", enabled);
     section1PlotGrid.classList.toggle("section1-single", !enabled);
+    section1PlotGrid.classList.remove("three-up");
   }
 
   function syncSection1PlotSizes(includePatternPlot) {
@@ -1907,6 +2157,16 @@ function renderPlots(data) {
   const showLineVvw = document.getElementById("showLineVvw").checked;
   const showLineVwu = document.getElementById("showLineVwu").checked;
   const inSpaceVectorMode = isSpaceVectorMode(data.meta.modulation_mode);
+
+  // Feature 3: 零相注入トグルの表示制御（carrier mode のみ）
+  const zeroSeqLabel = document.getElementById("showZeroSequenceLabel");
+  if (zeroSeqLabel) {
+    zeroSeqLabel.hidden = inSpaceVectorMode;
+  }
+  const showZeroSeq = !inSpaceVectorMode &&
+    document.getElementById("showZeroSequence").checked &&
+    data.reference_decomposition;
+
   const observer = data.svpwm_observer || null;
   const observerEnabled = Boolean(inSpaceVectorMode && observer && observer.enabled);
   let svpwmSnapshot = null;
@@ -1962,6 +2222,14 @@ function renderPlots(data) {
   if (inSpaceVectorMode && svpwmSnapshot) {
     setSection1SplitLayout(true);
     svpwmPatternCard.hidden = false;
+    // Feature 4: Dwell time plot
+    const dwellTimeCard = document.getElementById("dwellTimeCard");
+    if (observer && observer.dwell_times) {
+      if (dwellTimeCard) dwellTimeCard.hidden = false;
+      section1PlotGrid.classList.remove("two-up");
+      section1PlotGrid.classList.add("three-up");
+      renderDwellTimePlot(data);
+    }
     const periodS = 1.0 / data.params.f;
     const endTimeS = data.time[data.time.length - 1];
     const startTimeS = Math.max(data.time[0], endTimeS - periodS);
@@ -2002,6 +2270,28 @@ function renderPlots(data) {
         hoverinfo: "skip",
       });
     }
+
+    // V1-V6 fixed position labels on alpha-beta diagram
+    const vectorMarkerAlpha = [];
+    const vectorMarkerBeta = [];
+    const vectorMarkerText = [];
+    for (let k = 1; k <= 6; k++) {
+      vectorMarkerAlpha.push(VECTOR_ALPHA_BETA[k].a);
+      vectorMarkerBeta.push(VECTOR_ALPHA_BETA[k].b);
+      vectorMarkerText.push(VECTOR_LABELS[k]);
+    }
+    vectorTraces.push({
+      x: vectorMarkerAlpha,
+      y: vectorMarkerBeta,
+      mode: "markers+text",
+      name: "Vectors",
+      showlegend: false,
+      marker: { size: 10, color: VECTOR_COLORS.slice(1, 7), symbol: "diamond" },
+      text: vectorMarkerText,
+      textposition: "top center",
+      textfont: { size: 10, color: "#182126" },
+      hovertemplate: "%{text}<br>α=%{x:.3f}, β=%{y:.3f}<extra></extra>",
+    });
 
     const maOneAngles = Array.from({ length: 181 }, (_, index) => (2.0 * Math.PI * index) / 180.0);
     vectorTraces.push({
@@ -2164,6 +2454,8 @@ function renderPlots(data) {
   } else {
     setSection1SplitLayout(false);
     svpwmPatternCard.hidden = true;
+    const dwellTimeCard = document.getElementById("dwellTimeCard");
+    if (dwellTimeCard) dwellTimeCard.hidden = true;
     const referenceTraces = [];
 
     if (showURef) {
@@ -2190,6 +2482,69 @@ function renderPlots(data) {
         line: { color: "#6a5495", width: 2 },
       });
     }
+
+    // Feature 3: 零相注入分解オーバーレイ
+    let refDecompAnnotations = [];
+    if (showZeroSeq) {
+      const decomp = data.reference_decomposition;
+      if (showURef) {
+        referenceTraces.push({
+          x: timeMs,
+          y: decomp.u_pure,
+          name: "u 純正弦波",
+          line: { color: "#c14f2c", width: 1.5, dash: "dash" },
+          opacity: 0.5,
+        });
+      }
+      if (showVRef) {
+        referenceTraces.push({
+          x: timeMs,
+          y: decomp.v_pure,
+          name: "v 純正弦波",
+          line: { color: "#4e7a76", width: 1.5, dash: "dash" },
+          opacity: 0.5,
+        });
+      }
+      if (showWRef) {
+        referenceTraces.push({
+          x: timeMs,
+          y: decomp.w_pure,
+          name: "w 純正弦波",
+          line: { color: "#6a5495", width: 1.5, dash: "dash" },
+          opacity: 0.5,
+        });
+      }
+      referenceTraces.push({
+        x: timeMs,
+        y: decomp.zero_sequence,
+        name: "零相成分",
+        fill: "tozeroy",
+        fillcolor: "rgba(120, 120, 120, 0.15)",
+        line: { color: "rgba(100, 100, 100, 0.6)", width: 1.5 },
+      });
+      const peakPure = decomp.peak_pure;
+      const peakCombined = decomp.peak_combined;
+      if (peakPure > 0) {
+        const reductionPct = ((1.0 - peakCombined / peakPure) * 100.0).toFixed(1);
+        refDecompAnnotations.push({
+          x: timeMs[Math.floor(timeMs.length * 0.02)],
+          y: peakPure,
+          xref: "x",
+          yref: "y",
+          text: `Peak: ${peakPure.toFixed(3)}→${peakCombined.toFixed(3)} (−${reductionPct}%)`,
+          showarrow: true,
+          arrowhead: 2,
+          ax: 80,
+          ay: -30,
+          font: { size: 11, color: "#5b6468" },
+          bgcolor: "rgba(255,255,255,0.85)",
+          bordercolor: "rgba(24,33,38,0.2)",
+          borderwidth: 1,
+          borderpad: 4,
+        });
+      }
+    }
+
     referenceTraces.push({
       x: carrierTimeMs,
       y: carrierWaveform,
@@ -2202,6 +2557,7 @@ function renderPlots(data) {
       title: "変調信号とキャリア",
       xaxis: { ...plotTheme.xaxis, title: "時間 [ms]" },
       yaxis: { ...plotTheme.yaxis, title: "正規化振幅" },
+      annotations: refDecompAnnotations,
     }, { responsive: true, displayModeBar: false });
     syncSection1PlotSizes(false);
     Plotly.purge("svpwmPatternPlot");
@@ -2328,6 +2684,9 @@ function renderPlots(data) {
     shapes: switchingPlotShapes,
   }, { responsive: true, displayModeBar: false });
 
+  renderVectorStatePlot(data);
+  renderDutyRatioPlot(data);
+
   const lineVoltageTraces = [];
   if (showLineVuv) {
     lineVoltageTraces.push({
@@ -2398,11 +2757,14 @@ function renderPlots(data) {
     });
   }
 
-  Plotly.react("phaseVoltagePlot", phaseVoltageTraces, {
+  const dtResult = appendDeadtimeErrorTraces(data, phaseVoltageTraces, phaseVoltageTimeMs);
+  Plotly.react("phaseVoltagePlot", dtResult.traces, {
     ...plotTheme,
     title: "相電圧 (基本波比較)",
     xaxis: { ...plotTheme.xaxis, title: "時間 [ms]" },
     yaxis: { ...plotTheme.yaxis, title: "電圧 [V]" },
+    annotations: dtResult.annotations,
+    margin: dtResult.annotations.length > 0 ? { ...plotTheme.margin, t: 60 } : plotTheme.margin,
   }, { responsive: true, displayModeBar: false });
 
   const currentTraces = [
@@ -2515,10 +2877,15 @@ async function exportDashboardPng() {
     const plotIds = [
       "referencePlot",
       "switchingPlot",
+      "vectorStatePlot",
+      "dutyRatioPlot",
+      "dwellTimePlot",
       "lineVoltagePlot",
       "phaseVoltagePlot",
       "currentPlot",
       "fftPlot",
+      "sweepV1Plot",
+      "sweepThdPlot",
     ];
     const images = [];
     for (const plotId of plotIds) {
@@ -2604,6 +2971,176 @@ async function exportDashboardPng() {
     console.error(error);
     setStatus("PNG保存失敗", "PNG の出力処理に失敗しました。", true);
   }
+}
+
+// Feature 5: 過変調 m_a スイープ
+let sweepData = null;
+let sweepAnimTimer = null;
+
+async function runSweep() {
+  if (!currentResponse) return;
+  const params = currentResponse.params;
+  const payload = {
+    V_dc: params.V_dc,
+    f: params.f,
+    f_c: params.f_c,
+    t_d: params.t_d,
+    V_on: params.V_on,
+    R: params.R,
+    L: params.L,
+    modulation_mode: currentResponse.meta.modulation_mode,
+    fft_window: currentResponse.meta.fft_window,
+    n_points: 25,
+    m_a_min: 0.2,
+    m_a_max: 1.5,
+  };
+  setStatus("スイープ中", "m_a スイープを実行しています...");
+  try {
+    const resp = await fetch("/sweep", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(text);
+    }
+    sweepData = await resp.json();
+    renderSweepPlots(sweepData);
+    document.getElementById("sweepAnimateButton").disabled = false;
+    setStatus("スイープ完了", `${sweepData.points.length}点の m_a スイープ結果を描画しました。`);
+  } catch (err) {
+    console.error(err);
+    setStatus("スイープ失敗", "m_a スイープに失敗しました。", true);
+  }
+}
+
+function renderSweepPlots(sweep, highlightIdx = null) {
+  if (!sweep || !sweep.points || sweep.points.length === 0) return;
+  const pts = sweep.points;
+  const maVals = pts.map((p) => p.m_a_target);
+  const v1Vals = pts.map((p) => p.V1_pk);
+  const thdV = pts.map((p) => p.THD_V);
+  const thdI = pts.map((p) => p.THD_I);
+  const limit = sweep.m_a_limit;
+
+  const v1Traces = [
+    {
+      x: maVals, y: v1Vals,
+      name: "V1_pk [V]", mode: "lines+markers",
+      line: { color: "#c14f2c", width: 2 },
+      marker: { size: 5 },
+    },
+  ];
+  const v1Shapes = [
+    {
+      type: "line", x0: limit, x1: limit, y0: 0, y1: 1,
+      xref: "x", yref: "paper",
+      line: { color: "#4e7a76", width: 2, dash: "dash" },
+    },
+  ];
+  const v1Annotations = [
+    {
+      x: limit, y: 1.02, xref: "x", yref: "paper",
+      text: `m_a limit=${limit.toFixed(3)}`,
+      showarrow: false,
+      font: { size: 10, color: "#4e7a76" },
+    },
+  ];
+
+  if (highlightIdx !== null && highlightIdx >= 0 && highlightIdx < pts.length) {
+    v1Traces.push({
+      x: [maVals[highlightIdx]], y: [v1Vals[highlightIdx]],
+      name: "現在", mode: "markers",
+      marker: { size: 12, color: "#c14f2c", symbol: "diamond" },
+      showlegend: false,
+    });
+  }
+
+  Plotly.react("sweepV1Plot", v1Traces, {
+    ...plotTheme,
+    title: "m_a vs 基本波ピーク電圧",
+    xaxis: { ...plotTheme.xaxis, title: "m_a (target)" },
+    yaxis: { ...plotTheme.yaxis, title: "V1_pk [V]" },
+    shapes: v1Shapes,
+    annotations: v1Annotations,
+  }, { responsive: true, displayModeBar: false });
+
+  const thdTraces = [
+    {
+      x: maVals, y: thdV,
+      name: "THD_V [%]", mode: "lines+markers",
+      line: { color: "#c14f2c", width: 2 },
+      marker: { size: 5 },
+    },
+    {
+      x: maVals, y: thdI,
+      name: "THD_I [%]", mode: "lines+markers",
+      line: { color: "#4e7a76", width: 2 },
+      marker: { size: 5 },
+    },
+  ];
+  if (highlightIdx !== null && highlightIdx >= 0 && highlightIdx < pts.length) {
+    thdTraces.push({
+      x: [maVals[highlightIdx]], y: [thdV[highlightIdx]],
+      name: "", mode: "markers",
+      marker: { size: 12, color: "#c14f2c", symbol: "diamond" },
+      showlegend: false,
+    });
+    thdTraces.push({
+      x: [maVals[highlightIdx]], y: [thdI[highlightIdx]],
+      name: "", mode: "markers",
+      marker: { size: 12, color: "#4e7a76", symbol: "diamond" },
+      showlegend: false,
+    });
+  }
+
+  Plotly.react("sweepThdPlot", thdTraces, {
+    ...plotTheme,
+    title: "m_a vs THD",
+    xaxis: { ...plotTheme.xaxis, title: "m_a (target)" },
+    yaxis: { ...plotTheme.yaxis, title: "THD [%]" },
+    shapes: v1Shapes,
+    annotations: v1Annotations,
+  }, { responsive: true, displayModeBar: false });
+}
+
+function startSweepAnimation() {
+  if (!sweepData || !sweepData.points || sweepData.points.length === 0) return;
+  stopSweepAnimation();
+  let idx = 0;
+  const pts = sweepData.points;
+  const animBtn = document.getElementById("sweepAnimateButton");
+  animBtn.textContent = "停止";
+
+  function step() {
+    if (idx >= pts.length) {
+      stopSweepAnimation();
+      return;
+    }
+    renderSweepPlots(sweepData, idx);
+    // スライダーを現在の m_a に対応する V_ll に更新
+    const p = pts[idx];
+    const V_dc = sweepData.V_dc;
+    const V_ll_rms = p.m_a_target * V_dc * Math.sqrt(3) / (2 * Math.sqrt(2));
+    // V_ll スライダーの更新（display kHz 単位ではないので direct set）
+    const vllSlider = document.querySelector('input[type="range"][data-param="V_ll_rms"]');
+    const vllNumber = document.querySelector('input[type="number"][data-param="V_ll_rms"]');
+    if (vllSlider) vllSlider.value = V_ll_rms.toFixed(1);
+    if (vllNumber) vllNumber.value = V_ll_rms.toFixed(1);
+    idx++;
+    sweepAnimTimer = setTimeout(step, 400);
+  }
+  step();
+}
+
+function stopSweepAnimation() {
+  if (sweepAnimTimer) {
+    clearTimeout(sweepAnimTimer);
+    sweepAnimTimer = null;
+  }
+  const animBtn = document.getElementById("sweepAnimateButton");
+  if (animBtn) animBtn.textContent = "再生";
 }
 
 async function fetchScenarios() {
@@ -2703,6 +3240,14 @@ window.addEventListener("DOMContentLoaded", async () => {
     stepSvpwmAnimation(1);
   });
   updateSvpwmAnimationPlayPauseLabel();
+  document.getElementById("sweepRunButton").addEventListener("click", runSweep);
+  document.getElementById("sweepAnimateButton").addEventListener("click", () => {
+    if (sweepAnimTimer) {
+      stopSweepAnimation();
+    } else {
+      startSweepAnimation();
+    }
+  });
   try {
     await fetchScenarios();
   } catch (error) {

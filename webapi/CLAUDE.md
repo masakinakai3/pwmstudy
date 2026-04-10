@@ -10,10 +10,12 @@ FastAPI の入出力契約のみを担当する。物理計算を再実装しな
 | `/health` | GET | ヘルスチェック |
 | `/scenarios` | GET | `application.SCENARIO_PRESETS` を返す |
 | `/simulate` | POST | シミュレーション実行、`application.run_simulation()` + `build_web_response()` |
+| `/sweep` | POST | m_a スイープ実行、`application.simulation_runner.run_sweep()` |
 
 ## スキーマ
 
 - `schemas.py` の `SimulationRequest` で範囲検証と unknown field rejection を行う
+- `schemas.py` の `SweepRequest` で m_a スイープ入力を検証する
 - 外部 API の `fft_target` は `v_uv` / `i_u`、内部では `voltage` / `current` に写像
 
 ## 規約

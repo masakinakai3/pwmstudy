@@ -951,6 +951,82 @@ class TestSimulationRunnerContract:
         assert result["meta"]["sampling_mode"] == "natural"
         assert result["meta"]["clamp_mode"] == "continuous"
 
+    def test_run_simulation_produces_vector_states(self) -> None:
+        """結果辞書に vector_states が含まれ、全エントリが 0-7 の範囲にある."""
+        params = {
+            "V_dc": V_DC, "V_ll": V_LL, "f": F, "f_c": F_C,
+            "t_d": 0.0, "V_on": 0.0, "R": R, "L": L,
+            "modulation_mode": "carrier", "overmod_view": False,
+            "fft_target": "voltage", "fft_window": "hann",
+        }
+        result = run_simulation(params)
+
+        assert "vector_states" in result
+        indices = np.asarray(result["vector_states"]["indices"])
+        assert np.all((indices >= 0) & (indices <= 7))
+        usage = result["vector_states"]["usage_pct"]
+        assert len(usage) == 8
+        assert abs(sum(usage) - 100.0) < 0.01
+
+    def test_run_simulation_produces_reference_decomposition(self) -> None:
+        """三次高調波注入モードで零相成分が非ゼロとなる."""
+        params = {
+            "V_dc": V_DC, "V_ll": V_LL, "f": F, "f_c": F_C,
+            "t_d": 0.0, "V_on": 0.0, "R": R, "L": L,
+            "modulation_mode": "carrier_third_harmonic", "overmod_view": False,
+            "fft_target": "voltage", "fft_window": "hann",
+        }
+        result = run_simulation(params)
+
+        decomp = result["reference_decomposition"]
+        assert decomp["peak_pure"] >= decomp["peak_combined"]
+        zero_seq = np.asarray(decomp["zero_sequence"])
+        assert np.max(np.abs(zero_seq)) > 0.01
+
+    def test_run_simulation_pure_sine_has_zero_injection(self) -> None:
+        """純正弦波モードで零相成分がほぼゼロとなる."""
+        params = {
+            "V_dc": V_DC, "V_ll": V_LL, "f": F, "f_c": F_C,
+            "t_d": 0.0, "V_on": 0.0, "R": R, "L": L,
+            "modulation_mode": "carrier", "overmod_view": False,
+            "fft_target": "voltage", "fft_window": "hann",
+        }
+        result = run_simulation(params)
+
+        zero_seq = np.asarray(result["reference_decomposition"]["zero_sequence"])
+        assert np.max(np.abs(zero_seq)) < 1e-10
+
+    def test_run_simulation_produces_duty_ratios(self) -> None:
+        """デューティ比の実測と理論が近値を返す."""
+        params = {
+            "V_dc": V_DC, "V_ll": V_LL, "f": F, "f_c": F_C,
+            "t_d": 0.0, "V_on": 0.0, "R": R, "L": L,
+            "modulation_mode": "carrier", "overmod_view": False,
+            "fft_target": "voltage", "fft_window": "hann",
+        }
+        result = run_simulation(params)
+
+        dr = result["duty_ratios"]
+        assert len(dr["time_centers"]) > 0
+        u_actual = np.asarray(dr["u"])
+        u_theory = np.asarray(dr["u_theory"])
+        # 理想条件 (t_d=0, V_on=0) では実測と理論は ±5% 以内
+        assert np.allclose(u_actual, u_theory, atol=0.05)
+
+    def test_run_simulation_produces_deadtime_error(self) -> None:
+        """デッドタイムあり条件でデッドタイム誤差が非ゼロとなる."""
+        params = {
+            "V_dc": V_DC, "V_ll": V_LL, "f": F, "f_c": F_C,
+            "t_d": T_DEAD, "V_on": V_ON, "R": R, "L": L,
+            "modulation_mode": "carrier", "overmod_view": False,
+            "fft_target": "voltage", "fft_window": "hann",
+        }
+        result = run_simulation(params)
+
+        error = np.asarray(result["deadtime_error"]["v_uN"])
+        assert np.max(np.abs(error)) > 0.0
+        assert result["metrics"]["delta_v_dt_theory"] > 0.0
+
 
 class TestApplicationServices:
     """web 移行 Phase 1 の application サービス層テスト."""
@@ -1452,3 +1528,108 @@ class TestWebApi:
         assert data["meta"]["clamp_mode"] == "continuous"
         assert data["meta"]["overmod_view"] is True
         assert data["metrics"]["m_a"] > 1.0
+
+    def test_simulate_endpoint_returns_dwell_times_for_svpwm(self) -> None:
+        """SVPWM モードで dwell_times が observer に含まれる."""
+        client = TestClient(app)
+        payload = {
+            "V_dc": 300.0,
+            "V_ll_rms": 180.0,
+            "f": 50.0,
+            "f_c": 5000.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 0.01,
+            "modulation_mode": "space_vector",
+            "fft_target": "v_uv",
+            "fft_window": "hann",
+        }
+
+        response = client.post("/simulate", json=payload)
+
+        assert response.status_code == 200
+        data = response.json()
+        observer = data["svpwm_observer"]
+        assert observer["enabled"] is True
+        dt = observer["dwell_times"]
+        assert len(dt["t1_ratio"]) > 0
+        # T1 + T2 + T0 ≈ 1.0 for each window
+        for i in range(len(dt["t1_ratio"])):
+            total = dt["t1_ratio"][i] + dt["t2_ratio"][i] + dt["t0_ratio"][i]
+            assert abs(total - 1.0) < 0.02
+
+    def test_simulate_endpoint_returns_reference_decomposition(self) -> None:
+        """carrier_third_harmonic で reference_decomposition が返る."""
+        client = TestClient(app)
+        payload = {
+            "V_dc": 300.0,
+            "V_ll_rms": 150.0,
+            "f": 50.0,
+            "f_c": 5000.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 0.01,
+            "modulation_mode": "carrier_third_harmonic",
+            "fft_target": "v_uv",
+            "fft_window": "hann",
+        }
+
+        response = client.post("/simulate", json=payload)
+
+        assert response.status_code == 200
+        data = response.json()
+        decomp = data["reference_decomposition"]
+        assert decomp["peak_pure"] >= decomp["peak_combined"]
+        assert len(decomp["zero_sequence"]) > 0
+
+    def test_simulate_endpoint_returns_duty_ratios(self) -> None:
+        """duty_ratios がレスポンスに含まれる."""
+        client = TestClient(app)
+        payload = {
+            "V_dc": 300.0,
+            "V_ll_rms": 150.0,
+            "f": 50.0,
+            "f_c": 5000.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 0.01,
+            "modulation_mode": "carrier",
+            "fft_target": "v_uv",
+            "fft_window": "hann",
+        }
+
+        response = client.post("/simulate", json=payload)
+
+        assert response.status_code == 200
+        data = response.json()
+        dr = data["duty_ratios"]
+        assert len(dr["time_centers"]) > 0
+        assert len(dr["u"]) == len(dr["u_theory"])
+
+    def test_sweep_endpoint_returns_points(self) -> None:
+        """sweep エンドポイントが m_a スイープ結果を返す."""
+        client = TestClient(app)
+        payload = {
+            "V_dc": 300.0,
+            "f": 50.0,
+            "f_c": 5000.0,
+            "R": 10.0,
+            "L": 0.01,
+            "modulation_mode": "carrier",
+            "n_points": 5,
+            "m_a_min": 0.5,
+            "m_a_max": 1.2,
+        }
+
+        response = client.post("/sweep", json=payload)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["points"]) == 5
+        assert data["m_a_limit"] > 0.0
+        # V1 should increase with m_a
+        v1_values = [p["V1_pk"] for p in data["points"]]
+        assert v1_values[-1] > v1_values[0]

@@ -38,7 +38,7 @@ python main.py
 # web UI
 python -m uvicorn webapi.app:app --reload
 
-# テスト（65件）
+# テスト（74件）
 python -m pytest tests -v
 
 # 特定テストクラスのみ
