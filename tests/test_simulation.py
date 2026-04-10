@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: MIT
 """シミュレーションモジュールの物理妥当性テスト."""
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
@@ -14,6 +16,7 @@ from application import (
     normalize_ui_display_params,
     run_simulation,
 )
+from application.simulation_runner import _calc_svpwm_dwell_times
 from webapi.app import app
 from simulation.reference_generator import THIRD_HARMONIC_LIMIT, generate_reference
 from simulation.carrier_generator import generate_carrier
@@ -928,6 +931,44 @@ class TestSimulationRunnerContract:
         assert result_space_vector_2p["meta"]["modulation_mode_label"] == "空間ベクトル(二相変調)"
         assert result_carrier_2p["meta"]["modulation_mode_label"] == "三角波比較(二相変調)"
 
+    def test_svpwm_dwell_time_matches_known_sector1_case(self) -> None:
+        """m_a=1, theta=0 の既知条件で T1/T2/T0 が理論値に一致する."""
+        switching_period = 1.0 / F_C
+
+        sector, theta, modulation_mag, t1, t2, t0 = _calc_svpwm_dwell_times(
+            1.0,
+            0.0,
+            switching_period,
+        )
+
+        assert sector == 1
+        assert theta == pytest.approx(0.0, abs=1.0e-12)
+        assert modulation_mag == pytest.approx(1.0, rel=1.0e-12)
+        assert t1 == pytest.approx(0.75 * switching_period, rel=1.0e-12)
+        assert t2 == pytest.approx(0.0, abs=1.0e-12)
+        assert t0 == pytest.approx(0.25 * switching_period, rel=1.0e-12)
+
+    def test_svpwm_dwell_time_reaches_zero_vector_boundary_at_linear_limit(self) -> None:
+        """線形上限 m_a=2/sqrt(3), theta=30deg で T0 がゼロになる."""
+        switching_period = 1.0 / F_C
+        theta = np.pi / 6.0
+        modulation_mag = THIRD_HARMONIC_LIMIT
+        alpha = modulation_mag * np.cos(theta)
+        beta = modulation_mag * np.sin(theta)
+
+        sector, theta_out, modulation_mag_out, t1, t2, t0 = _calc_svpwm_dwell_times(
+            alpha,
+            beta,
+            switching_period,
+        )
+
+        assert sector == 1
+        assert theta_out == pytest.approx(theta, rel=1.0e-12)
+        assert modulation_mag_out == pytest.approx(modulation_mag, rel=1.0e-12)
+        assert t1 == pytest.approx(0.5 * switching_period, rel=1.0e-12)
+        assert t2 == pytest.approx(0.5 * switching_period, rel=1.0e-12)
+        assert t0 == pytest.approx(0.0, abs=1.0e-12)
+
     def test_run_simulation_defaults_to_carrier_modulation(self) -> None:
         """modulation_mode を省略した場合は carrier を既定値として扱う."""
         params = {
@@ -1133,6 +1174,46 @@ class TestApplicationServices:
         assert abs(snapshot["m_a"] - results["metrics"]["m_a"]) < 1.0e-12
         assert abs(snapshot["V1"] - results["spectra"]["v_uv"]["fundamental_mag"]) < 1.0e-12
         assert abs(snapshot["I_measured"] - results["metrics"]["I_measured"]) < 1.0e-12
+
+
+class TestEducationContentRegression:
+    """教育コンテンツと Web UI ラベルの回帰テスト."""
+
+    @staticmethod
+    def _read_repo_text(relative_path: str) -> str:
+        root = Path(__file__).resolve().parents[1]
+        return (root / relative_path).read_text(encoding="utf-8")
+
+    def test_deep_math_guide_keeps_beginner_bridge_sections(self) -> None:
+        """deep_math_guide に導入・導出補強が維持される."""
+        text = self._read_repo_text("docs/deep_math_guide.md")
+
+        assert "### 1.1 なぜ PWM インバータが必要か" in text
+        assert "概念図（1レグ）は次のように表せます。" in text
+        assert "v_{nO} = \\frac{v_{uO} + v_{vO} + v_{wO}}{3}" in text
+        assert "Regular サンプリングは「離散時刻で参照値を読み" in text
+        assert "導出を1行で書くと" in text
+        assert "シミュレータ observer の注記" not in text
+
+    def test_webui_metric_labels_are_unit_explicit(self) -> None:
+        """Web UI の V1/I1 ラベルが線間/相と peak を明示する."""
+        text = self._read_repo_text("webui/app.js")
+
+        assert 'label: "V1_LL,pk [V]"' in text
+        assert 'label: "I1_u,pk [A]"' in text
+        assert 'label: "ΔV1_LL,pk [V]"' in text
+        assert 'label: "ΔI1_u,pk [A]"' in text
+
+    def test_user_docs_use_explicit_v1_i1_descriptions(self) -> None:
+        """README と user_guide の V1/I1 表記が明確である."""
+        readme = self._read_repo_text("README.md")
+        user_guide = self._read_repo_text("docs/user_guide.md")
+
+        assert "V1_LL,pk（v_uv 基本波ピーク）" in readme
+        assert "I1_u,pk（i_u 基本波ピーク）" in readme
+        assert "V(rms)" in readme
+        assert "V1_LL,pk（線間電圧 v_uv の基本波ピーク）" in user_guide
+        assert "I1_u,pk（相電流 i_u の基本波ピーク）" in user_guide
 
 
 class TestWebApi:
@@ -1558,6 +1639,7 @@ class TestWebApi:
         for i in range(len(dt["t1_ratio"])):
             total = dt["t1_ratio"][i] + dt["t2_ratio"][i] + dt["t0_ratio"][i]
             assert abs(total - 1.0) < 0.02
+        assert max(dt["t0_ratio"]) > 0.1
 
     def test_simulate_endpoint_returns_reference_decomposition(self) -> None:
         """carrier_third_harmonic で reference_decomposition が返る."""

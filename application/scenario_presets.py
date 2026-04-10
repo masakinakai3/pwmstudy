@@ -3,19 +3,20 @@
 
 SCENARIO_PRESETS = [
     {
+        "id": "linear_limit",
         "label": "①線形変調限界",
-        "hint": "V_LL を 180V 付近まで上げると m_a が 1 に近づき、184V 超でクランプ表示へ切り替わる。",
-        "focus": "変調率 m_a と線形変調限界の関係を確認する。",
-        "learning_objective": "線形領域と過変調領域の境界を定量把握する。",
+        "hint": "最初は①変調信号と③線間電圧だけに注目。V_LL を上げると m_a が上がり、上限でクランプ表示に切り替わる。",
+        "focus": "V_LL 指令と m_a、線形上限のつながりを最初に掴む。",
+        "learning_objective": "出力指令を上げたときに、どこで線形関係が崩れるかを説明できる。",
         "prerequisites": [
-            "変調方式は三角波比較（carrier）を使用する。",
-            "Overmod View は OFF で開始する。",
-            "比較時は V_dc, f, f_c を固定する。",
+            "変調方式は三角波比較（carrier）を選ぶ。",
+            "Overmod View は OFF から始める。",
+            "V_dc, f, f_c は固定したまま比較する。",
         ],
         "procedure": [
-            "V_LL を 141V から 200V 以上へ段階的に増やす。",
-            "m_a の表示値とクランプ表示の有無を確認する。",
-            "Overmod View を ON にして同一条件を再確認する。",
+            "V_LL を 141V から 200V 以上へ少しずつ上げる。",
+            "m_a の表示とクランプ表示の有無を確認する。",
+            "同じ条件で Overmod View を ON にして違いを確認する。",
         ],
         "expected_observation": [
             {
@@ -49,18 +50,19 @@ SCENARIO_PRESETS = [
         "fft_window": "hann",
     },
     {
+        "id": "carrier_frequency",
         "label": "②キャリア周波数",
-        "hint": "f_c を 1kHz から増やすとキャリア高調波ピークが高周波側へ移動し、電流リプルが減少する。",
-        "focus": "スイッチング周波数と高調波分布の関係を観察する。",
-        "learning_objective": "m_f と高調波帯域の関係を把握する。",
+        "hint": "次は⑥FFTを見る。f_c を上げると高調波ピークが右へ移動し、電流リプルが下がりやすくなる。",
+        "focus": "f_c と FFT の見え方（電圧/電流）の関係を掴む。",
+        "learning_objective": "m_f を上げると何が改善しやすいかを説明できる。",
         "prerequisites": [
-            "V_dc, V_LL, f, R, L を固定して比較する。",
-            "FFT 窓関数は Hann に固定する。",
+            "V_dc, V_LL, f, R, L は固定して比較する。",
+            "FFT 窓は Hann に固定する。",
         ],
         "procedure": [
-            "f_c を 1kHz から 10kHz に上げる。",
-            "FFT の主ピーク帯域の移動を確認する。",
-            "相電流リプルの変化を併せて確認する。",
+            "f_c を 1kHz から 10kHz へ上げる。",
+            "FFT の主ピーク帯域が右へ移ることを確認する。",
+            "相電流のリプル変化も一緒に確認する。",
         ],
         "expected_observation": [
             {
@@ -94,13 +96,14 @@ SCENARIO_PRESETS = [
         "fft_window": "hann",
     },
     {
+        "id": "inductance_smoothing",
         "label": "③L平滑効果",
-        "hint": "L = 0.1mH で電流リプルが大きく、50mH まで上げると正弦波に近づく。",
-        "focus": "RL 負荷の平滑効果と高周波抑制を比較する。",
-        "learning_objective": "インダクタンス増加時のリプル抑制効果を理解する。",
+        "hint": "⑤相電流を主に見る。L を上げるとギザギザが減り、電流が滑らかになる。",
+        "focus": "L の変更が電流波形と THD_I にどう効くかを確認する。",
+        "learning_objective": "インダクタが高周波成分を抑える役割を説明できる。",
         "prerequisites": [
-            "R は固定し、L のみを変化させる。",
-            "評価対象は相電流 i_u と THD_I を優先する。",
+            "R は固定し、L だけを変える。",
+            "評価は相電流 i_u と THD_I を優先する。",
         ],
         "procedure": [
             "L を 0.1mH から 50mH へ上げる。",
@@ -136,18 +139,19 @@ SCENARIO_PRESETS = [
         "fft_window": "hann",
     },
     {
+        "id": "phase_lag",
         "label": "④位相遅れ",
-        "hint": "L = 50mH, R = 5Ω で PF1 が小さくなり、電流が電圧から大きく遅れる。",
-        "focus": "cos(phi) と FFT ベースの PF1 を比較する。",
-        "learning_objective": "位相遅れと力率の関係を時系列・FFTの両面で把握する。",
+        "hint": "理論比較パネルを見る。L/R を大きくすると電流が遅れ、PF1 が下がる。",
+        "focus": "位相遅れ、cos(phi)、PF1 の関係を同時に確認する。",
+        "learning_objective": "電流遅れが力率低下につながる理由を説明できる。",
         "prerequisites": [
             "FFT 表示対象は i_u に設定する。",
-            "R と L の比率を変え、時定数差を作る。",
+            "R と L の比率を変えて時定数差を作る。",
         ],
         "procedure": [
-            "R=5Ω, L=50mH で波形を確認する。",
+            "R=5Ω, L=50mH の状態を確認する。",
             "cos(phi) と PF1(FFT) の値を比較する。",
-            "R を増やして位相遅れの減少を確認する。",
+            "R を増やして位相遅れが減ることを確認する。",
         ],
         "expected_observation": [
             {
@@ -181,70 +185,26 @@ SCENARIO_PRESETS = [
         "fft_window": "hann",
     },
     {
-        "label": "⑤過変調",
-        "hint": "V_LL = 220V で m_a > 1。Overmod View ON では線形クランプを無効化し、指令波の飽和と波形歪みを観察できる。",
-        "focus": "線形クランプ有無での過変調挙動を比較する。",
-        "learning_objective": "過変調での波形歪みと基本波利用率のトレードオフを理解する。",
+        "id": "svpwm_compare",
+        "label": "⑤SVPWM比較",
+        "hint": "ここから方式比較。carrier と space_vector を切り替えて、同じ条件で V1 と波形の差を確認する。",
+        "focus": "連続PWM同士の電圧利用率差を比較する。",
+        "learning_objective": "零相注入で線形領域が広がる効果を説明できる。",
         "prerequisites": [
-            "V_dc は 300V に固定する。",
-            "Overmod View の ON/OFF を同一条件で比較する。",
-        ],
-        "procedure": [
-            "V_LL を 220V に設定して Overmod View OFF を確認する。",
-            "同条件で Overmod View ON に切り替える。",
-            "m_a と電圧波形歪みの違いを比較する。",
-        ],
-        "expected_observation": [
-            {
-                "text": "m_a が 1 を超える。",
-                "metric": "m_a",
-                "comparison": "ge",
-                "value": 1.0,
-            },
-            {
-                "text": "Overmod View ON で線形クランプ無効の挙動を示す。",
-            },
-        ],
-        "uncertainty_notes": [
-            "歪みの評価は THD だけでなく低次成分の増加も確認する。",
-        ],
-        "recommended_compare_modes": ["carrier", "space_vector"],
-        "tags": ["overmodulation", "clamp", "nonlinear"],
-        "sliders": {
-            "V_dc": 300.0,
-            "V_ll": 220.0,
-            "f": 50.0,
-            "f_c": 5.0,
-            "t_d": 0.0,
-            "V_on": 0.0,
-            "R": 10.0,
-            "L": 10.0,
-        },
-        "modulation_mode": "carrier",
-        "overmod_view": True,
-        "fft_target": "voltage",
-        "fft_window": "hann",
-    },
-    {
-        "label": "⑥SVPWM比較",
-        "hint": "SVPWM（min-max 零相注入）は線形上限が拡張される。差は m_a が高い条件で顕在化しやすい。",
-        "focus": "三角波比較と SVPWM の線形上限・高変調時挙動を比較する。",
-        "learning_objective": "連続PWM系での電圧利用率差を比較する。",
-        "prerequisites": [
-            "比較モードは carrier と space_vector を用いる。",
+            "比較モードは carrier と space_vector を使う。",
             "V_dc, f_c, 負荷条件は固定する。",
         ],
         "procedure": [
-            "V_LL を高め（例: 170-190V）に設定する。",
+            "V_LL を 170-190V 付近に設定する。",
             "carrier と space_vector を切り替える。",
-            "V1, THD_V, m_a を比較する。",
+            "V1, THD_V, m_a_limit を比較する。",
         ],
         "expected_observation": [
             {
-                "text": "高変調条件で SVPWM 側の有効利用率が高い傾向を示す。",
+                "text": "高変調条件で space_vector 側の有効利用率が高い傾向を示す。",
             },
             {
-                "text": "m_a が高いほど差が顕在化しやすい。",
+                "text": "m_a が高いほど方式差が見えやすい。",
             },
         ],
         "uncertainty_notes": [
@@ -268,10 +228,11 @@ SCENARIO_PRESETS = [
         "fft_window": "hann",
     },
     {
-        "label": "⑦二相変調(DPWM)",
-        "hint": "二相変調では 60 度クランプ区間が生じ、スイッチング損失低減が期待できる一方で低次成分の増加傾向を確認できる。",
-        "focus": "連続PWMと二相変調のクランプ区間・高調波分布を比較する。",
-        "learning_objective": "DPWM のクランプ動作とスペクトル特性を把握する。",
+        "id": "dpwm_compare",
+        "label": "⑥二相変調(DPWM)",
+        "hint": "連続PWMと二相変調を切り替え、②スイッチングパターンでクランプ区間を先に確認する。",
+        "focus": "クランプ区間と高調波分布の変化を比較する。",
+        "learning_objective": "DPWM でスイッチング回数が減る見え方を説明できる。",
         "prerequisites": [
             "比較対象として carrier を用意する。",
             "同一 V_dc, V_LL, f, f_c 条件で比較する。",
@@ -310,17 +271,18 @@ SCENARIO_PRESETS = [
         "fft_window": "hann",
     },
     {
-        "label": "⑧三倍高調波注入",
-        "hint": "三倍高調波注入は線形上限を拡張する。SVPWM と同等の電圧利用率向上を比較しやすい。",
-        "focus": "三角波比較と三倍高調波注入の電圧利用率・スペクトル差を比較する。",
-        "learning_objective": "零相三倍高調波注入の効果を定性的・定量的に確認する。",
+        "id": "third_harmonic_compare",
+        "label": "⑦三倍高調波注入",
+        "hint": "carrier と三倍高調波注入を切り替え、①変調信号の形と V1 の違いを見る。",
+        "focus": "三倍高調波注入で線形上限が広がることを確認する。",
+        "learning_objective": "零相三倍高調波注入の効果を定性的・定量的に説明できる。",
         "prerequisites": [
             "carrier と carrier_third_harmonic を比較する。",
             "高変調率条件で差を観測する。",
         ],
         "procedure": [
             "V_LL を高めに設定して両方式を切り替える。",
-            "V1 と m_a の関係を比較する。",
+            "V1 と m_a_limit の違いを比較する。",
             "FFT でスペクトル分布の差を確認する。",
         ],
         "expected_observation": [
@@ -352,10 +314,11 @@ SCENARIO_PRESETS = [
         "fft_window": "hann",
     },
     {
-        "label": "⑨SVPWM二相変調比較",
-        "hint": "空間ベクトル(二相変調)では SVPWM 系で 60 度クランプが導入される。連続SVPWMとの差を確認する。",
+        "id": "svpwm_two_phase_compare",
+        "label": "⑧SVPWM二相変調比較",
+        "hint": "SVPWM の連続/不連続を比較する。②スイッチングと⑥FFTを行き来して確認する。",
         "focus": "space_vector と space_vector_two_phase の差を直接比較する。",
-        "learning_objective": "SVPWM 系における連続/不連続変調の違いを整理する。",
+        "learning_objective": "SVPWM 系における連続/不連続変調の違いを整理できる。",
         "prerequisites": [
             "space_vector と space_vector_two_phase を同条件で比較する。",
             "FFT は v_uv 表示を優先する。",
@@ -390,6 +353,49 @@ SCENARIO_PRESETS = [
         },
         "modulation_mode": "space_vector_two_phase",
         "overmod_view": False,
+        "fft_target": "voltage",
+        "fft_window": "hann",
+    },
+    {
+        "id": "overmodulation",
+        "label": "⑨過変調",
+        "hint": "最後に過変調を確認。Overmod View OFF/ON を切り替え、線形クランプの有無と歪み増加を比較する。",
+        "focus": "線形クランプ有無での過変調挙動を比較する。",
+        "learning_objective": "過変調での波形歪みと利用率のトレードオフを説明できる。",
+        "prerequisites": [
+            "V_dc は 300V に固定する。",
+            "Overmod View の ON/OFF を同一条件で比較する。",
+        ],
+        "procedure": [
+            "V_LL を 220V に設定して Overmod View OFF を確認する。",
+            "同条件で Overmod View ON に切り替える。",
+            "m_a_raw, m_a_limit, 波形歪みの違いを比較する。",
+        ],
+        "expected_observation": [
+            {
+                "text": "選択中方式の線形上限を超えるとクランプまたは過変調表示になる。",
+            },
+            {
+                "text": "Overmod View ON で線形クランプ無効の挙動を示す。",
+            },
+        ],
+        "uncertainty_notes": [
+            "歪み評価は THD だけでなく低次成分の増加も確認する。",
+        ],
+        "recommended_compare_modes": ["carrier", "space_vector"],
+        "tags": ["overmodulation", "clamp", "nonlinear"],
+        "sliders": {
+            "V_dc": 300.0,
+            "V_ll": 220.0,
+            "f": 50.0,
+            "f_c": 5.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 10.0,
+        },
+        "modulation_mode": "carrier",
+        "overmod_view": True,
         "fft_target": "voltage",
         "fft_window": "hann",
     },

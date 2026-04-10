@@ -43,6 +43,8 @@ FFT_WINDOW_LABELS = {
     "rectangular": "Rectangular",
 }
 SQRT3 = np.sqrt(3.0)
+SVPWM_ACTIVE_VECTOR_MAGNITUDE = 4.0 / 3.0
+SVPWM_DWELL_TIME_GAIN = SQRT3 / 2.0
 
 
 def _solve_nonideal_power_stage(
@@ -236,6 +238,46 @@ def _clarke_alpha_beta(
     return alpha, beta
 
 
+def _calc_svpwm_dwell_times(
+    alpha: float,
+    beta: float,
+    switching_period: float,
+) -> tuple[int, float, float, float, float, float]:
+    """alpha-beta 平面上の参照から SVPWM の滞留時間を計算する.
+
+    ここで扱う alpha-beta は、参照波形と同じ変調信号正規化
+    （位相電圧を V_dc/2 で割った空間）とする。
+
+    Args:
+        alpha: alpha 軸成分 [-]
+        beta: beta 軸成分 [-]
+        switching_period: スイッチング周期 [s]
+
+    Returns:
+        (sector, theta, modulation_mag, t1, t2, t0)
+    """
+    if switching_period <= 0.0:
+        raise ValueError("switching_period must be positive.")
+
+    angle = float(np.arctan2(beta, alpha))
+    if angle < 0.0:
+        angle += 2.0 * np.pi
+
+    sector = int(np.floor(angle / (np.pi / 3.0))) + 1
+    theta = angle - (sector - 1) * (np.pi / 3.0)
+    modulation_mag = float(np.hypot(alpha, beta))
+
+    t1_raw = switching_period * SVPWM_DWELL_TIME_GAIN * modulation_mag * np.sin(
+        np.pi / 3.0 - theta
+    )
+    t2_raw = switching_period * SVPWM_DWELL_TIME_GAIN * modulation_mag * np.sin(theta)
+    t1 = float(np.clip(t1_raw, 0.0, switching_period))
+    t2 = float(np.clip(t2_raw, 0.0, switching_period - t1))
+    t0 = float(max(0.0, switching_period - t1 - t2))
+
+    return sector, float(theta), modulation_mag, t1, t2, t0
+
+
 def _build_carrier_boundary_hold(
     signal: np.ndarray,
     carrier_index: np.ndarray,
@@ -279,18 +321,7 @@ def _build_svpwm_observer_payload(
         alpha_k = float(alpha_hold[start])
         beta_k = float(beta_hold[start])
 
-        angle = float(np.arctan2(beta_k, alpha_k))
-        if angle < 0.0:
-            angle += 2.0 * np.pi
-        sector = int(np.floor(angle / (np.pi / 3.0))) + 1
-        theta = angle - (sector - 1) * (np.pi / 3.0)
-
-        modulation_mag = float(np.hypot(alpha_k, beta_k))
-        t1_raw = T_s * SQRT3 * modulation_mag * np.sin(np.pi / 3.0 - theta)
-        t2_raw = T_s * SQRT3 * modulation_mag * np.sin(theta)
-        t1 = float(np.clip(t1_raw, 0.0, T_s))
-        t2 = float(np.clip(t2_raw, 0.0, T_s - t1))
-        t0 = float(max(0.0, T_s - t1 - t2))
+        sector, theta, _, t1, t2, t0 = _calc_svpwm_dwell_times(alpha_k, beta_k, T_s)
         t0_half = 0.5 * t0
 
         active_a = f"V{sector}"
@@ -362,6 +393,7 @@ def _build_svpwm_observer_payload(
         "time_s": t_disp,
         "alpha": alpha,
         "beta": beta,
+        "active_vector_magnitude": float(SVPWM_ACTIVE_VECTOR_MAGNITUDE),
         "carrier_hold": {
             "u": held_u,
             "v": held_v,

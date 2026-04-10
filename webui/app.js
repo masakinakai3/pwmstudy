@@ -53,14 +53,11 @@ const modulationModeHints = {
 };
 
 const SQRT3 = Math.sqrt(3.0);
+const SVPWM_ACTIVE_VECTOR_MAGNITUDE = 4.0 / 3.0;
+const SVPWM_LINEAR_LIMIT = 2.0 / SQRT3;
 
 const VECTOR_LABELS = ["V0","V1","V2","V3","V4","V5","V6","V7"];
 const VECTOR_COLORS = ["#888","#c14f2c","#d97706","#4e7a76","#3b82f6","#6a5495","#ec4899","#666"];
-const VECTOR_ALPHA_BETA = [
-  {a:0, b:0}, {a:2/3, b:0}, {a:1/3, b:Math.sqrt(3)/3},
-  {a:-1/3, b:Math.sqrt(3)/3}, {a:-2/3, b:0},
-  {a:-1/3, b:-Math.sqrt(3)/3}, {a:1/3, b:-Math.sqrt(3)/3}, {a:0, b:0},
-];
 
 function buildModulationHint(modulationMode) {
   return `${modulationModeHints[modulationMode]} サンプリング方式は Natural 固定です。`;
@@ -91,7 +88,7 @@ function buildSvpwmWindowFromAlphaBeta(alphaNow, betaNow, switchingPeriod, zeroV
   const thetaInSector = angle - (sector - 1) * (Math.PI / 3.0);
   const modulationMag = Math.hypot(alphaNow, betaNow);
 
-  const gain = SQRT3 * modulationMag;
+  const gain = 0.5 * SQRT3 * modulationMag;
   const t1Raw = switchingPeriod * gain * Math.sin(Math.PI / 3.0 - thetaInSector);
   const t2Raw = switchingPeriod * gain * Math.sin(thetaInSector);
   const t1 = Math.max(0.0, Math.min(switchingPeriod, t1Raw));
@@ -409,11 +406,12 @@ const metricDefinitions = [
   { key: "m_f", label: "m_f", digits: 1 },
   { key: "THD_V", label: "THD_V [%]", digits: 1 },
   { key: "THD_I", label: "THD_I [%]", digits: 1 },
+  { key: "V1_pk", label: "V1_LL,pk [V]", digits: 1 },
   { key: "V_LL_rms_out", label: "V_LL,out,fund(rms) [V]", digits: 1 },
   { key: "V_LL_rms_total", label: "V_LL,total(rms) [V]", digits: 1 },
   { key: "I_rms", label: "I_rms [A]", digits: 2 },
   { key: "pf1_fft", label: "PF1", digits: 3 },
-  { key: "I1_pk", label: "I1_pk [A]", digits: 2 },
+  { key: "I1_pk", label: "I1_u,pk [A]", digits: 2 },
 ];
 
 const plotTheme = {
@@ -483,6 +481,9 @@ function saveScenarioProgressStore() {
 }
 
 function makeScenarioProgressKey(scenario, index) {
+  if (scenario && typeof scenario.id === "string" && scenario.id.trim() !== "") {
+    return scenario.id;
+  }
   if (scenario && typeof scenario.label === "string" && scenario.label.trim() !== "") {
     return scenario.label;
   }
@@ -1358,12 +1359,12 @@ function renderComparisonPanel() {
       tone: "neutral",
     },
     {
-      label: "ΔV1 [V]",
+      label: "ΔV1_LL,pk [V]",
       value: formatSignedNumber(deltaV1, 1),
       tone: deltaV1 > 0 ? "up" : (deltaV1 < 0 ? "down" : "neutral"),
     },
     {
-      label: "ΔI1 [A]",
+      label: "ΔI1_u,pk [A]",
       value: formatSignedNumber(deltaI1, 2),
       tone: deltaI1 > 0 ? "up" : (deltaI1 < 0 ? "down" : "neutral"),
     },
@@ -1444,7 +1445,7 @@ function renderLearningInsightPanel(response) {
   } else {
     rows.push({
       label: "変調領域",
-      value: `m_a=${formatNumber(metrics.m_a, 3)} は線形領域です。方式差は V1 と THD_V を並べて比較すると把握しやすくなります。`,
+      value: `m_a=${formatNumber(metrics.m_a, 3)} は線形領域です。方式差は V1_LL,pk と THD_V を並べて比較すると把握しやすくなります。`,
     });
   }
 
@@ -2255,8 +2256,12 @@ function renderPlots(data) {
       Math.max(...alphaOneCycle.map(Math.abs)),
       Math.max(...betaOneCycle.map(Math.abs)),
     ) * 1.2;
-    const radialBound = Math.max(1.1, radialBoundAuto);
-    const fixedVectorAxisBound = data.meta.overmod_view ? 2.2 : 1.1;
+    const linearLimit = Number.isFinite(data.metrics.m_a_limit)
+      ? data.metrics.m_a_limit
+      : SVPWM_LINEAR_LIMIT;
+    const radialBound = Math.max(1.4, radialBoundAuto, linearLimit * 1.15);
+    const fixedVectorAxisBound = data.meta.overmod_view ? 2.2 : 1.5;
+    const activeVectorMagnitude = SVPWM_ACTIVE_VECTOR_MAGNITUDE;
     const vectorTraces = [];
     for (let k = 0; k < 6; k += 1) {
       const angle = k * Math.PI / 3.0;
@@ -2276,8 +2281,9 @@ function renderPlots(data) {
     const vectorMarkerBeta = [];
     const vectorMarkerText = [];
     for (let k = 1; k <= 6; k++) {
-      vectorMarkerAlpha.push(VECTOR_ALPHA_BETA[k].a);
-      vectorMarkerBeta.push(VECTOR_ALPHA_BETA[k].b);
+      const angle = (k - 1) * Math.PI / 3.0;
+      vectorMarkerAlpha.push(activeVectorMagnitude * Math.cos(angle));
+      vectorMarkerBeta.push(activeVectorMagnitude * Math.sin(angle));
       vectorMarkerText.push(VECTOR_LABELS[k]);
     }
     vectorTraces.push({
@@ -2303,6 +2309,17 @@ function renderPlots(data) {
       line: { color: "rgba(24,33,38,0.45)", width: 1.6, dash: "dash" },
       hovertemplate: "m_a=1.0 boundary<extra></extra>",
     });
+    if (Math.abs(linearLimit - 1.0) > 1.0e-6) {
+      vectorTraces.push({
+        x: maOneAngles.map((angle) => linearLimit * Math.cos(angle)),
+        y: maOneAngles.map((angle) => linearLimit * Math.sin(angle)),
+        mode: "lines",
+        name: "linear limit",
+        showlegend: false,
+        line: { color: "rgba(193,79,44,0.65)", width: 1.6, dash: "dot" },
+        hovertemplate: `linear limit = ${linearLimit.toFixed(3)}<extra></extra>`,
+      });
+    }
 
     vectorTraces.push({
       x: alphaOneCycle,
