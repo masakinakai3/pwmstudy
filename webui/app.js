@@ -1678,14 +1678,17 @@ function updateActiveScenarioProgress() {
   const progress = computeScenarioProgress(scenario.expected_observation);
   const progressKey = makeScenarioProgressKey(scenario, activeScenarioIndex);
   const currentEntry = scenarioProgressStore[progressKey] || {};
-  const bestRatio = Math.max(Number(currentEntry.bestRatio) || 0.0, progress.ratio);
+  const bestRatio = progress.scoredTotal > 0
+    ? Math.max(Number(currentEntry.bestRatio) || 0.0, progress.ratio)
+    : 0.0;
 
   scenarioProgressStore[progressKey] = {
     scenarioLabel: scenario.label,
     lastRatio: progress.ratio,
     bestRatio,
     lastPassed: progress.passed,
-    lastTotal: progress.total,
+    lastTotal: progress.scoredTotal,
+    infoTotal: progress.info,
     updatedAt: new Date().toISOString(),
   };
   saveScenarioProgressStore();
@@ -1715,35 +1718,36 @@ function renderScenarioProgressPanel() {
   const progress = computeScenarioProgress(scenario.expected_observation);
   const progressKey = makeScenarioProgressKey(scenario, activeScenarioIndex);
   const stored = scenarioProgressStore[progressKey] || null;
-  const bestRatio = stored ? Number(stored.bestRatio) || 0.0 : progress.ratio;
-  const percent = (progress.ratio * 100.0).toFixed(0);
-  const bestPercent = (bestRatio * 100.0).toFixed(0);
+  const hasScoredItems = progress.scoredTotal > 0;
+  const bestRatio = hasScoredItems
+    ? (stored ? Number(stored.bestRatio) || 0.0 : progress.ratio)
+    : 0.0;
+  const percent = hasScoredItems ? (progress.ratio * 100.0).toFixed(0) : "—";
+  const bestPercent = hasScoredItems ? (bestRatio * 100.0).toFixed(0) : "—";
 
   let recommendation = "未達項目の判定理由を確認し、関連するスライダーを1つずつ調整してください。";
-  if (progress.failed === 0 && progress.pending === 0 && progress.total > 0) {
+  if (!hasScoredItems) {
+    recommendation = "このシナリオは数値自動判定を持ちません。ヒントと期待観測に沿って波形を観察してください。";
+  } else if (progress.failed === 0 && progress.pending === 0) {
     recommendation = "このシナリオは達成済みです。別方式へ切替えて差分比較へ進んでください。";
   } else if (progress.pending > 0) {
     recommendation = "未判定項目があります。ベースライン設定が必要な観測条件を先に満たしてください。";
   }
 
-  panel.innerHTML = `
-    <div class="detail-row progress-summary">
-      <span>現在シナリオ</span>
-      <strong>${scenario.label}</strong>
-    </div>
-    <div class="detail-row progress-current">
-      <span>達成率</span>
-      <strong>${percent}% (${progress.passed}/${progress.total})</strong>
-    </div>
-    <div class="detail-row progress-best">
-      <span>ベスト記録</span>
-      <strong>${bestPercent}%</strong>
-    </div>
-    <div class="detail-row progress-note">
-      <span>次アクション</span>
-      <strong>${recommendation}</strong>
-    </div>
-  `;
+  panel.innerHTML = [
+    buildDetailRowHtml("現在シナリオ", scenario.label, "progress-summary"),
+    buildDetailRowHtml(
+      "達成率",
+      hasScoredItems ? `${percent}% (${progress.passed}/${progress.scoredTotal})` : "自動判定なし",
+      "progress-current",
+    ),
+    buildDetailRowHtml(
+      "ベスト記録",
+      hasScoredItems ? `${bestPercent}%` : "自動判定なし",
+      "progress-best",
+    ),
+    buildDetailRowHtml("次アクション", recommendation, "progress-note"),
+  ].join("");
 }
 
 function resetScenarioProgress() {
@@ -2377,17 +2381,13 @@ function renderPlots(data) {
         y: 1.02,
         yanchor: "bottom",
         font: { size: 10 },
-          const bestRatio = progress.scoredTotal > 0
-            ? Math.max(Number(currentEntry.bestRatio) || 0.0, progress.ratio)
-            : 0.0;
+      },
       xaxis: {
         ...plotTheme.xaxis,
         title: "alpha [p.u.]",
         range: [-fixedVectorAxisBound, fixedVectorAxisBound],
         autorange: false,
         constrain: "domain",
-            lastTotal: progress.scoredTotal,
-            infoTotal: progress.info,
         automargin: true,
       },
       yaxis: {
@@ -2440,36 +2440,29 @@ function renderPlots(data) {
           renderSvpwmPatternPlot(dynamicSnapshot, 0.0);
           updateSvpwmSectorInfo(dynamicSnapshot);
         }
-              const bestRatio = stored ? Number(stored.bestRatio) || 0.0 : progress.ratio;
-              const hasScoredItems = progress.scoredTotal > 0;
-              const percent = hasScoredItems ? (progress.ratio * 100.0).toFixed(0) : "—";
-              const bestPercent = hasScoredItems ? (bestRatio * 100.0).toFixed(0) : "—";
+      },
+      windowsToAnimate,
+      svpwmSnapshot.switchingPeriod,
       svpwmSnapshot.event_times_rel_s,
       oneCycleTime,
-              if (!hasScoredItems) {
-                recommendation = "このシナリオは数値自動判定を持ちません。ヒントと期待観測に沿って波形を観察してください。";
-              } else if (progress.failed === 0 && progress.pending === 0) {
+    );
+
     const initialWindow = windowsToAnimate && windowsToAnimate[0] ? windowsToAnimate[0] : null;
     if (initialWindow) {
-                recommendation = "未判定項目があります。ベースライン設定や表示条件を確認してから再評価してください。";
+      const initialSnapshot = {
         alphaNow: initialWindow.alpha,
         betaNow: initialWindow.beta,
-              panel.innerHTML = [
-                buildDetailRowHtml("現在シナリオ", scenario.label, "progress-summary"),
-                buildDetailRowHtml(
-                  "達成率",
-                  hasScoredItems ? `${percent}% (${progress.passed}/${progress.scoredTotal})` : "自動判定なし",
-                  "progress-current",
-                ),
-                buildDetailRowHtml(
-                  "ベスト記録",
-                  hasScoredItems ? `${bestPercent}%` : "自動判定なし",
-                  "progress-best",
-                ),
-                buildDetailRowHtml("次アクション", recommendation, "progress-note"),
-              ].join("");
-        zeroVector,
-      );
+        sector: initialWindow.sector,
+        thetaInSector: initialWindow.theta_in_sector,
+        t1: initialWindow.t1,
+        t2: initialWindow.t2,
+        t0: initialWindow.t0,
+        switchingPeriod: svpwmSnapshot.switchingPeriod,
+        sequenceStates: Array.isArray(initialWindow.sequence) ? initialWindow.sequence : [],
+        event_times_rel_s: Array.isArray(initialWindow.event_times_rel_s)
+          ? initialWindow.event_times_rel_s
+          : [],
+      };
       renderSvpwmPatternPlot(initialSnapshot, 0.0);
     }
     syncSection1PlotSizes(true);

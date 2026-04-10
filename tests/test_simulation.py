@@ -2,6 +2,8 @@
 """シミュレーションモジュールの物理妥当性テスト."""
 
 from pathlib import Path
+import shutil
+import subprocess
 
 import numpy as np
 import pytest
@@ -1245,6 +1247,51 @@ class TestEducationContentRegression:
         readme = self._read_repo_text("README.md")
 
         assert "/sweep" in readme
+
+
+class TestWebUiRegression:
+    """Web UI スクリプトの回帰テスト."""
+
+    @staticmethod
+    def _read_app_js() -> str:
+        root = Path(__file__).resolve().parents[1]
+        return (root / "webui" / "app.js").read_text(encoding="utf-8")
+
+    def test_webui_app_js_passes_node_syntax_check(self) -> None:
+        """app.js が Node.js の構文検査を通過する."""
+        node_exe = shutil.which("node")
+        if node_exe is None:
+            pytest.skip("Node.js is not installed.")
+
+        app_js_path = Path(__file__).resolve().parents[1] / "webui" / "app.js"
+        result = subprocess.run(
+            [node_exe, "--check", str(app_js_path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr or result.stdout
+
+    def test_render_plots_block_excludes_progress_panel_fragments(self) -> None:
+        """renderPlots に進捗パネル用コード断片が混入していない."""
+        text = self._read_app_js()
+        start = text.index("function renderPlots(data) {")
+        end = text.index("function setBaseline() {")
+        render_plots_block = text[start:end]
+
+        unexpected_tokens = (
+            "progress.scoredTotal",
+            "stored.bestRatio",
+            "scenario.label",
+            "panel.innerHTML = [",
+            "recommendation = ",
+        )
+
+        for token in unexpected_tokens:
+            assert token not in render_plots_block, (
+                f"renderPlots に進捗パネル断片が混入している: {token}"
+            )
 
 
 class TestWebApi:
