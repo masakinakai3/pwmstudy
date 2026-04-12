@@ -84,6 +84,7 @@ def build_export_payload(
             "R_ohm": float(display_params["R"]),
             "L_mH": float(display_params["L"]),
             "modulation_mode": meta["modulation_mode"],
+            "overmod_view": bool(meta["overmod_view"]),
             "modulation_mode_label": meta["modulation_mode_label"],
             "reference_mode": meta["reference_mode"],
             "sampling_mode": meta["sampling_mode"],

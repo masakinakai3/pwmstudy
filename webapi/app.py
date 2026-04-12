@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -15,6 +16,7 @@ from webapi.schemas import SimulationRequest, SweepRequest
 
 
 WEBUI_DIR = Path(__file__).resolve().parent.parent / "webui"
+LOGGER = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Three-Phase Two-Level PWM Inverter Learning Simulator API",
@@ -23,6 +25,18 @@ app = FastAPI(
 )
 
 app.mount("/static", StaticFiles(directory=WEBUI_DIR), name="static")
+
+
+def _to_public_fft_target(fft_target: object) -> str:
+    if fft_target == "current":
+        return "i_u"
+    return "v_uv"
+
+
+def _serialize_scenario_preset(preset: dict[str, object]) -> dict[str, object]:
+    serialized = dict(preset)
+    serialized["fft_target"] = _to_public_fft_target(preset.get("fft_target"))
+    return serialized
 
 
 @app.get("/")
@@ -43,7 +57,7 @@ def health() -> dict[str, str]:
 @app.get("/scenarios")
 def scenarios() -> list[dict[str, object]]:
     """学習シナリオプリセットを返す."""
-    return SCENARIO_PRESETS
+    return [_serialize_scenario_preset(preset) for preset in SCENARIO_PRESETS]
 
 
 @app.post("/simulate")
@@ -52,7 +66,8 @@ def simulate(request: SimulationRequest) -> dict[str, object]:
     try:
         results = run_simulation(request.to_simulation_params())
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"シミュレーション実行エラー: {type(exc).__name__}: {exc}") from exc
+        LOGGER.exception("Simulation failed")
+        raise HTTPException(status_code=500, detail="シミュレーション実行エラー") from exc
     return build_web_response(results)
 
 
@@ -77,8 +92,9 @@ def sweep(request: SweepRequest) -> dict[str, object]:
             m_a_max=request.m_a_max,
         )
     except Exception as exc:
+        LOGGER.exception("Sweep failed")
         raise HTTPException(
             status_code=500,
-            detail=f"スイープ実行エラー: {type(exc).__name__}: {exc}",
+            detail="スイープ実行エラー",
         ) from exc
     return result

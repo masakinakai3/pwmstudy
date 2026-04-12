@@ -388,6 +388,7 @@ class InverterVisualizer:
                     "L": float(p["L_mH"]),
                 }
                 modulation_mode = p.get("modulation_mode")
+                overmod_view = p.get("overmod_view")
                 fft_target = p.get("fft_target")
                 fft_window = p.get("fft_window")
 

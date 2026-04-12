@@ -100,6 +100,15 @@ def calc_inverter_voltage(
     """
     if V_on < 0.0:
         raise ValueError("V_on must be non-negative.")
+    n_points = len(S_u)
+    if len(S_v) != n_points or len(S_w) != n_points:
+        raise ValueError("S_u, S_v, and S_w must have the same length.")
+    if i_u is not None and len(i_u) != n_points:
+        raise ValueError("i_u must have the same length as S_u.")
+    if i_v is not None and len(i_v) != n_points:
+        raise ValueError("i_v must have the same length as S_u.")
+    if i_w is not None and len(i_w) != n_points:
+        raise ValueError("i_w must have the same length as S_u.")
 
     if inputs_are_leg_states:
         leg_u = _require_leg_state(S_u)

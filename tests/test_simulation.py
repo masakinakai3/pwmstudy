@@ -458,6 +458,16 @@ class TestInverterVoltage:
         assert np.isclose(v_uv_pos[0], 0.0, atol=1e-10)
         assert np.isclose(v_uv_neg[0], V_DC - 2.0 * V_ON, atol=1e-10)
 
+    def test_mismatched_switching_lengths_raise_clear_error(self) -> None:
+        """相ごとの配列長不一致は明示的な ValueError で拒否する."""
+        with pytest.raises(ValueError, match="S_u, S_v, and S_w must have the same length."):
+            calc_inverter_voltage(
+                np.array([1, 0, 1]),
+                np.array([1, 0]),
+                np.array([1, 0, 1]),
+                V_DC,
+            )
+
 
 class TestRlLoadSolver:
     """RL負荷電流演算モジュールのテスト."""
@@ -528,6 +538,18 @@ class TestRlLoadSolver:
         expected = (v_step / L_test) * t_test
 
         assert np.allclose(i_u, expected, atol=1e-10)
+
+    def test_mismatched_voltage_lengths_raise_clear_error(self) -> None:
+        """相電圧配列長が一致しない場合は明示的な ValueError を返す."""
+        with pytest.raises(ValueError, match="v_uN, v_vN, and v_wN must have the same length."):
+            solve_rl_load(
+                np.array([1.0, 2.0]),
+                np.array([1.0]),
+                np.array([1.0, 2.0]),
+                R,
+                L,
+                DT_ACTUAL,
+            )
 
 
 class TestNonidealInverterModel:
@@ -1155,6 +1177,7 @@ class TestApplicationServices:
 
         assert payload["params"]["V_ll_rms_V"] == 141.0
         assert payload["params"]["modulation_mode"] == "carrier"
+        assert payload["params"]["overmod_view"] is False
         assert payload["params"]["reference_mode"] == "sinusoidal"
         assert payload["params"]["sampling_mode"] == "natural"
         assert payload["params"]["clamp_mode"] == "continuous"
@@ -1331,6 +1354,24 @@ class TestWebUiRegression:
                 f"renderPlots に進捗パネル断片が混入している: {token}"
             )
 
+    def test_dwell_time_plot_renders_single_snapshot_ratios_not_full_history(self) -> None:
+        """滞留時間配分は dwell_times 全履歴ではなく単一 SVPWM スナップショットを描く."""
+        text = self._read_app_js()
+        start = text.index("function renderDwellTimePlot(")
+        end = text.index("function appendDeadtimeErrorTraces(")
+        block = text[start:end]
+
+        assert "function renderDwellTimePlot(svpwmSnapshot)" in block
+        assert "const t0 = Number(svpwmSnapshot.t0);" in block
+        assert "const t1 = Number(svpwmSnapshot.t1);" in block
+        assert "const t2 = Number(svpwmSnapshot.t2);" in block
+        assert "computeSvpwmZeroVectorDurations" in block
+        assert 'const dwellLabels = ["V0", "T1 (Va)", "T2 (Vb)", "V7"];' in block
+        assert 'T0 = V0 + V7 =' in block
+        assert "const dwellRatios = dwellTimesS.map((value) => value / switchingPeriod);" in block
+        assert "window_centers_s" not in block
+        assert "visibleIndices" not in block
+
     def test_sweep_button_exposes_running_state_and_missing_result_feedback(self) -> None:
         """スイープ実行ボタンが実行中表示と無反応防止メッセージを持つ."""
         app_js = self._read_app_js()
@@ -1369,6 +1410,7 @@ class TestWebApi:
         assert data[0]["label"] == SCENARIO_PRESETS[0]["label"]
         assert "focus" in data[0]
         assert "hint" in data[0]
+        assert {item["fft_target"] for item in data} <= {"v_uv", "i_u"}
 
     def test_root_serves_web_ui_html(self) -> None:
         """ルートで Web UI HTML を返す."""
@@ -1470,6 +1512,33 @@ class TestWebApi:
         assert data["metrics"]["V_LL_rms_total"] >= data["metrics"]["V_LL_rms_out"]
         assert data["metrics"]["THD_V"] >= 0.0
         assert data["metrics"]["THD_I"] >= 0.0
+
+    def test_simulate_endpoint_hides_internal_exception_details(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """500 応答では内部例外名や詳細をそのまま露出しない."""
+        def _boom(params: dict[str, object]) -> dict[str, object]:
+            raise RuntimeError("sensitive detail")
+
+        webapi_app_module = __import__("webapi.app", fromlist=["run_simulation"])
+        monkeypatch.setattr(webapi_app_module, "run_simulation", _boom)
+        client = TestClient(app)
+        payload = {
+            "V_dc": 300.0,
+            "V_ll_rms": 141.0,
+            "f": 50.0,
+            "f_c": 5000.0,
+            "t_d": 0.0,
+            "V_on": 0.0,
+            "R": 10.0,
+            "L": 0.01,
+            "modulation_mode": "carrier",
+            "fft_target": "v_uv",
+            "fft_window": "hann",
+        }
+
+        response = client.post("/simulate", json=payload)
+
+        assert response.status_code == 500
+        assert response.json()["detail"] == "シミュレーション実行エラー"
 
     def test_change_point_voltage_plot_beats_uniform_downsampling(self) -> None:
         """線間電圧の切替点保持圧縮は等間隔間引きより多くの遷移を残す."""

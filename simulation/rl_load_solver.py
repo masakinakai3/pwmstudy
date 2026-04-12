@@ -74,6 +74,8 @@ def solve_rl_load(
     if dt <= 0.0:
         raise ValueError(f"時間刻み dt は正の値でなければなりません: dt={dt}")
     n_points = len(v_uN)
+    if len(v_vN) != n_points or len(v_wN) != n_points:
+        raise ValueError("v_uN, v_vN, and v_wN must have the same length.")
     voltages = np.vstack((v_uN, v_vN, v_wN))  # [V]
     currents = np.zeros((3, n_points), dtype=float)  # [A]
     alpha, beta = _calc_exact_update_coefficients(R, L, dt)

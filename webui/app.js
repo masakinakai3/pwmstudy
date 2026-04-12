@@ -1271,7 +1271,7 @@ function normalizeImportedControls(payload) {
       R: Number(p.R_ohm),
       L_mh: Number(p.L_mH),
       modulation_mode: p.modulation_mode || defaultDisplayValues.modulation_mode,
-      overmod_view: false,
+      overmod_view: Boolean(p.overmod_view),
       fft_target: p.fft_target === "current" ? "i_u" : "v_uv",
       fft_window: p.fft_window === "rectangular" ? "rectangular" : "hann",
       show_u_ref: defaultDisplayValues.show_u_ref,
@@ -1856,7 +1856,9 @@ function applyScenario(index) {
   document.getElementById("modulationMode").value = scenario.modulation_mode;
   document.getElementById("overmodView").checked = Boolean(scenario.overmod_view);
   updateModulationHint();
-  document.getElementById("fftTarget").value = scenario.fft_target === "current" ? "i_u" : "v_uv";
+  document.getElementById("fftTarget").value = scenario.fft_target === "current" || scenario.fft_target === "i_u"
+    ? "i_u"
+    : "v_uv";
   document.getElementById("fftWindow").value = scenario.fft_window;
   activeScenarioIndex = index;
   renderScenarioGuide(index);
@@ -1964,47 +1966,132 @@ function renderVectorStatePlot(data) {
   }, { responsive: true, displayModeBar: false });
 }
 
-function renderDwellTimePlot(data, highlightIdx = null) {
+function computeSvpwmZeroVectorDurations(svpwmSnapshot) {
+  const sequenceStates = Array.isArray(svpwmSnapshot.sequenceStates)
+    ? svpwmSnapshot.sequenceStates
+    : [];
+  const eventTimesRelS = normalizeSvpwmPatternEventTimes(svpwmSnapshot, sequenceStates.length);
+
+  let v0Time = 0.0;
+  let v7Time = 0.0;
+  if (sequenceStates.length > 0 && eventTimesRelS.length === sequenceStates.length + 1) {
+    for (let i = 0; i < sequenceStates.length; i += 1) {
+      const dt = Math.max(0.0, eventTimesRelS[i + 1] - eventTimesRelS[i]);
+      if (sequenceStates[i] === "V0") v0Time += dt;
+      if (sequenceStates[i] === "V7") v7Time += dt;
+    }
+    return { v0Time, v7Time };
+  }
+
+  const t0 = Number(svpwmSnapshot.t0);
+  if (!Number.isFinite(t0) || t0 < 0.0) {
+    return { v0Time: 0.0, v7Time: 0.0 };
+  }
+
+  const usesV0 = sequenceStates.includes("V0");
+  const usesV7 = sequenceStates.includes("V7");
+  if (usesV0 && !usesV7) return { v0Time: t0, v7Time: 0.0 };
+  if (!usesV0 && usesV7) return { v0Time: 0.0, v7Time: t0 };
+  return { v0Time: 0.5 * t0, v7Time: 0.5 * t0 };
+}
+
+function renderDwellTimePlot(svpwmSnapshot) {
   const card = document.getElementById("dwellTimeCard");
   if (!card) return;
-  const observer = data.svpwm_observer;
-  const inSvMode = isSpaceVectorMode(data.meta.modulation_mode);
-  if (!inSvMode || !observer || !observer.enabled || !observer.dwell_times) {
+  if (!svpwmSnapshot) {
     card.hidden = true;
     return;
   }
+  const t0 = Number(svpwmSnapshot.t0);
+  const t1 = Number(svpwmSnapshot.t1);
+  const t2 = Number(svpwmSnapshot.t2);
+  const switchingPeriod = Number.isFinite(svpwmSnapshot.switchingPeriod) && svpwmSnapshot.switchingPeriod > 0.0
+    ? svpwmSnapshot.switchingPeriod
+    : t0 + t1 + t2;
+  if (![t0, t1, t2, switchingPeriod].every(Number.isFinite) || switchingPeriod <= 0.0) {
+    card.hidden = true;
+    return;
+  }
+
+  const { v0Time, v7Time } = computeSvpwmZeroVectorDurations(svpwmSnapshot);
   card.hidden = false;
-  const dt = observer.dwell_times;
-  const centersMs = dt.window_centers_s.map(v => v * 1000.0);
+  const labels = ["T0 (零)", "T1 (Va)", "T2 (Vb)"];
+  const timesS = [t0, t1, t2];
+  const ratios = timesS.map((value) => value / switchingPeriod);
+  const colors = ["rgba(193,79,44,0.75)", "rgba(59,130,246,0.8)", "rgba(78,122,118,0.8)"];
+  const dwellLabels = ["V0", "T1 (Va)", "T2 (Vb)", "V7"];
+  const dwellTimesS = [v0Time, t1, t2, v7Time];
+  const dwellRatios = dwellTimesS.map((value) => value / switchingPeriod);
+  const dwellColors = ["rgba(24,33,38,0.78)", "rgba(59,130,246,0.82)", "rgba(78,122,118,0.82)", "rgba(106,84,149,0.82)"];
+  const totalT0Ratio = (v0Time + v7Time) / switchingPeriod;
+  const dwellAnnotations = dwellLabels.map((label, index) => ({
+    x: label,
+    y: Math.min(1.05, dwellRatios[index] + 0.05),
+    text: `${(dwellRatios[index] * 100.0).toFixed(1)}%<br>${(dwellTimesS[index] * 1.0e6).toFixed(1)} us`,
+    showarrow: false,
+    font: { size: 10, color: "#182126" },
+  }));
+
+  Plotly.react("dwellTimePlot", [{
+    x: dwellLabels,
+    y: dwellRatios,
+    type: "bar",
+    marker: { color: dwellColors },
+    hovertemplate: "%{x}<br>T/Ts=%{y:.3f}<extra></extra>",
+  }], {
+    ...plotTheme,
+    title: {
+      text: `滞留時間配分 T1/T2/T0（1キャリア周期, Sector ${svpwmSnapshot.sector}）`,
+      x: 0.02,
+      xanchor: "left",
+      font: { size: 14 },
+    },
+    margin: { ...plotTheme.margin, t: 96 },
+    showlegend: false,
+    xaxis: { ...plotTheme.xaxis, title: "ベクトル" },
+    yaxis: { ...plotTheme.yaxis, title: "T/Ts", range: [0, 1.12] },
+    annotations: [{
+      xref: "paper",
+      yref: "paper",
+      x: 0.0,
+      y: 1.16,
+      xanchor: "left",
+      yanchor: "bottom",
+      text: `T0 = V0 + V7 = ${(totalT0Ratio * 100.0).toFixed(1)}%`,
+      showarrow: false,
+      font: { size: 11, color: "#5b6468" },
+    }, ...dwellAnnotations],
+  }, { responsive: true, displayModeBar: false });
+  return;
 
   const t0Trace = {
-    x: centersMs, y: dt.t0_ratio,
+    x: centersMs, y: t0Ratio,
     name: "T0 (零)", type: "bar",
-    marker: { color: dt.t0_ratio.map(v => v < 0.01 ? "#dc2626" : "rgba(193,79,44,0.7)") },
+    marker: { color: t0Ratio.map(v => v < 0.01 ? "#dc2626" : "rgba(193,79,44,0.7)") },
     hovertemplate: "T0/Ts=%{y:.3f}<extra></extra>",
   };
   const t1Trace = {
-    x: centersMs, y: dt.t1_ratio,
+    x: centersMs, y: t1Ratio,
     name: "T1 (Va)", type: "bar",
     marker: { color: "rgba(59,130,246,0.75)" },
     hovertemplate: "T1/Ts=%{y:.3f}<extra></extra>",
   };
   const t2Trace = {
-    x: centersMs, y: dt.t2_ratio,
+    x: centersMs, y: t2Ratio,
     name: "T2 (Vb)", type: "bar",
     marker: { color: "rgba(78,122,118,0.75)" },
     hovertemplate: "T2/Ts=%{y:.3f}<extra></extra>",
   };
 
   const shapes = [];
-  if (highlightIdx !== null && highlightIdx >= 0 && highlightIdx < centersMs.length) {
+  if (visibleHighlightIdx !== null && visibleHighlightIdx >= 0 && visibleHighlightIdx < centersMs.length) {
     const halfW = centersMs.length > 1
       ? Math.abs(centersMs[1] - centersMs[0]) * 0.5
       : 0.01;
     shapes.push({
       type: "rect",
-      x0: centersMs[highlightIdx] - halfW,
-      x1: centersMs[highlightIdx] + halfW,
+      x0: centersMs[visibleHighlightIdx] - halfW,
+      x1: centersMs[visibleHighlightIdx] + halfW,
       y0: 0, y1: 1,
       fillcolor: "rgba(24,33,38,0.12)",
       line: { color: "#182126", width: 1.5 },
@@ -2014,7 +2101,7 @@ function renderDwellTimePlot(data, highlightIdx = null) {
 
   // Find windows where T0 is near zero
   const annotations = [];
-  const nearZeroIdx = dt.t0_ratio.findIndex(v => v < 0.01);
+  const nearZeroIdx = t0Ratio.findIndex(v => v < 0.01);
   if (nearZeroIdx >= 0) {
     annotations.push({
       x: centersMs[nearZeroIdx], y: 1.05,
@@ -2026,9 +2113,13 @@ function renderDwellTimePlot(data, highlightIdx = null) {
 
   Plotly.react("dwellTimePlot", [t0Trace, t1Trace, t2Trace], {
     ...plotTheme,
-    title: "滞留時間配分 T1/T2/T0",
     barmode: "stack",
-    xaxis: { ...plotTheme.xaxis, title: "時間 [ms]" },
+    title: "滞留時間配分 T1/T2/T0（1周期）",
+    xaxis: {
+      ...plotTheme.xaxis,
+      title: "時間 [ms]",
+      range: centersMs.length > 1 ? [centersMs[0], centersMs[centersMs.length - 1]] : undefined,
+    },
     yaxis: { ...plotTheme.yaxis, title: "T/Ts", range: [0, 1.1] },
     shapes,
     annotations,
@@ -2232,11 +2323,11 @@ function renderPlots(data) {
     svpwmPatternCard.hidden = false;
     // Feature 4: Dwell time plot
     const dwellTimeCard = document.getElementById("dwellTimeCard");
-    if (observer && observer.dwell_times) {
+    if (dwellTimeCard) {
       if (dwellTimeCard) dwellTimeCard.hidden = false;
       section1PlotGrid.classList.remove("two-up");
       section1PlotGrid.classList.add("three-up");
-      renderDwellTimePlot(data);
+      renderDwellTimePlot(svpwmSnapshot);
     }
     const periodS = 1.0 / data.params.f;
     const endTimeS = data.time[data.time.length - 1];
@@ -2426,6 +2517,7 @@ function renderPlots(data) {
             event_times_rel_s: Array.isArray(window.event_times_rel_s) ? window.event_times_rel_s : [],
           };
           renderSvpwmPatternPlot(windowSnapshot, 0.0);
+          renderDwellTimePlot(windowSnapshot);
           updateSvpwmSectorInfo(windowSnapshot);
         } else if (alphaOneCycle[pointIndex] !== undefined && betaOneCycle[pointIndex] !== undefined) {
           const zeroVector = isTwoPhaseSvpwm
@@ -2438,6 +2530,7 @@ function renderPlots(data) {
             zeroVector,
           );
           renderSvpwmPatternPlot(dynamicSnapshot, 0.0);
+          renderDwellTimePlot(dynamicSnapshot);
           updateSvpwmSectorInfo(dynamicSnapshot);
         }
       },
@@ -2464,6 +2557,7 @@ function renderPlots(data) {
           : [],
       };
       renderSvpwmPatternPlot(initialSnapshot, 0.0);
+      renderDwellTimePlot(initialSnapshot);
     }
     syncSection1PlotSizes(true);
   } else {
